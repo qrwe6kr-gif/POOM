@@ -1,0 +1,86 @@
+"""데모 모드 — 시연 인프라.
+
+시차 단절을 5분 안에 보여주기 위한 '가상 세계 시각'.
+두 계정에 동일한 가상 시각을 설정하고 함께 전진시키는 방식으로 사용한다.
+"""
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from ..deps import get_db
+from ..engines import ledger
+from ..models import Collab, Message, Need, Skill, User
+from ..timeutil import aware, get_now
+
+router = APIRouter()
+
+
+class TimeIn(BaseModel):
+    user_ids: List[str]
+    now: Optional[str] = None   # ISO8601, null이면 해제(실시간 복귀)
+
+
+@router.post("/demo/time")
+def set_time(body: TimeIn, db: Session = Depends(get_db)):
+    dt = None
+    if body.now:
+        dt = datetime.fromisoformat(body.now.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    for uid in body.user_ids:
+        u = db.get(User, uid)
+        if not u:
+            raise HTTPException(404, f"no such user {uid}")
+        u.demo_now = dt
+    db.commit()
+    return {"ok": True, "virtual_now": dt.isoformat() if dt else None}
+
+
+@router.post("/demo/seed")
+def seed(db: Session = Depends(get_db)):
+    """한국 개발자 ↔ 미국 서부 디자이너 시연 시나리오를 생성한다."""
+    tag = get_now().strftime("%H%M%S")
+    kr = User(name="지호(KR·Dev)", email=f"kr_{tag}@demo.poom", country="KR",
+              tz="Asia/Seoul", lang="ko", created_at=get_now())
+    us = User(name="Alex(US·Design)", email=f"us_{tag}@demo.poom", country="US",
+              tz="America/Los_Angeles", lang="en", created_at=get_now())
+    db.add_all([kr, us]); db.flush()
+    ledger.grant_signup_bonus(db, kr.id, get_now())
+    ledger.grant_signup_bonus(db, us.id, get_now())
+    db.add_all([Skill(user_id=kr.id, role="dev", level="mid"),
+                Need(user_id=kr.id, role="design", note="인디 게임 로고·키비주얼"),
+                Skill(user_id=us.id, role="design", level="mid"),
+                Need(user_id=us.id, role="dev", note="portfolio site")])
+
+    # 가상 시각 기준선: KST 저녁, LA 새벽 직전 구도를 만들기 좋은 시각
+    base = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    c = Collab(requester_id=kr.id, provider_id=us.id, title="로고 + 키 비주얼",
+               scope="다크 네이비 톤 로고 1종, 키 비주얼 1장", credit_amount=60,
+               created_at=base)
+    db.add(c); db.flush()
+    ledger.hold(db, c, base)
+    c.status = "agreed"; c.agreed_at = base
+
+    script = ["Hi! Excited to work on your logo.",                       # US
+              "반갑습니다! 로고 방향은 다크 네이비로 확정할게요",          # KR — 결정
+              "폰트는 아직 고민 중이에요, 후보 2개 추려볼게요",           # KR — 미결정
+              "수요일까지 첫 시안 부탁드립니다!",                         # KR — 액션
+              "혹시 최종본은 SVG로 받을 수 있을까요?"]                    # KR — 질문
+    senders = [us.id, kr.id, kr.id, kr.id, kr.id]
+    for i, (sid, text) in enumerate(zip(senders, script)):
+        db.add(Message(collab_id=c.id, sender_id=sid, body=text,
+                       created_at=base + timedelta(minutes=5 * i)))
+    for u in (kr, us):
+        u.demo_now = base + timedelta(minutes=30)
+    db.commit()
+    return {"kr_user_id": kr.id, "us_user_id": us.id, "collab_id": c.id,
+            "virtual_now": (base + timedelta(minutes=30)).isoformat(),
+            "demo_steps": [
+                "1) KR 화면: GET /matching → Alex 매칭·겹침 시간 확인, 협업은 이미 agreed(60c 잠김)",
+                "2) POST /demo/time 으로 두 계정을 +11h 전진 → KR이 GET /users/{us}/status → sleeping",
+                "3) KR이 메시지 추가 전송 (US는 수면 중)",
+                "4) POST /demo/time 으로 +17h 지점 이동(US 오전) → US가 GET /collabs/{id}/digest → 자동 생성",
+                "5) 양측 POST /collabs/{id}/complete → 60c 지급, 리뷰 → 동시 공개"]}

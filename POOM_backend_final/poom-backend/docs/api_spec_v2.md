@@ -13,7 +13,7 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 
 - **베이스 경로**: 모든 엔드포인트는 `/api/v1` 프리픽스를 갖는다. 예외는 인프라용 `GET /health` 하나다.
 - **인증**: 모든 보호 엔드포인트는 헤더 `X-User-Id: <id>` 를 요구한다 (해커톤 간이 방식, 추후 JWT 교체).
-  `POST /api/v1/auth/signup`과 데모 API는 무인증이다.
+  `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, 데모 API는 무인증이다.
 - **오류**: `401` 인증 없음 · `403` 권한 없음(비참여자, 상태 조회 제한) · `404` 대상 없음 ·
   `400` 규칙 위반(잔액 부족, 이중 정산, 상태 전이 불가 — `detail`에 사유).
 - **식별자**: user_id · project_id는 32자 hex 문자열. message_id · digest_id는 정수.
@@ -29,6 +29,16 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 - body: `name`, `email`, `country`(선택), `timezone`(기본 Asia/Seoul),
   `preferred_language`(기본 ko), `work_start`(기본 9), `work_end`(기본 18)
 - Response `200`: `{ "user_id": "…", "note": "…" }` · 이메일 중복은 `400`.
+
+`POST /api/v1/auth/login` — (초안 누락) **비밀번호 없는 해커톤 간이 로그인.**
+이메일로 계정을 찾아, 프론트가 이후 `X-User-Id` 헤더에 넣을 값을 돌려준다.
+
+- body: `email`
+- Response `200`: `{ "user_id": "…", "name": "지호", "preferred_language": "ko" }`
+  — 로그인 직후 화면 인사말과 언어 설정에 바로 쓸 수 있도록 이름·언어를 함께 준다.
+- 등록되지 않은 이메일은 `404`(`detail`에 사유).
+- 비밀번호가 없으므로 신원 증명이 아니다. 실서비스 전환 시 signup·login·`get_current_user`를
+  한 벌로 Supabase Auth(JWT)로 교체한다.
 
 `GET /api/v1/users/{user_id}/status`
 

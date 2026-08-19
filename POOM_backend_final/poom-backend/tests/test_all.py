@@ -311,3 +311,23 @@ def test_cors_preflight_allows_frontend_origin():
     assert "x-user-id" in r.headers["access-control-allow-headers"].lower()
     # 헤더 인증 방식이므로 credentials는 켜지 않는다
     assert "access-control-allow-credentials" not in r.headers
+
+
+# ---------------- 이메일 간이 로그인 ----------------
+
+def test_email_login_returns_same_user():
+    """signup으로 만든 계정이 이메일만으로 다시 조회되고, 미등록 이메일은 404."""
+    email = "login@poom.dev"
+    uid = client.post(f"{V1}/auth/signup", json={
+        "name": "로그인테스트", "email": email,
+        "timezone": "Asia/Seoul", "preferred_language": "ko"}).json()["user_id"]
+    r = client.post(f"{V1}/auth/login", json={"email": email})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user_id"] == uid
+    assert body["name"] == "로그인테스트" and body["preferred_language"] == "ko"
+    # 받은 user_id가 실제로 인증에 쓰인다
+    assert client.get(f"{V1}/me", headers=H(body["user_id"])).json()["user_id"] == uid
+    # 미등록 이메일
+    bad = client.post(f"{V1}/auth/login", json={"email": "nobody@poom.dev"})
+    assert bad.status_code == 404 and bad.json()["detail"]

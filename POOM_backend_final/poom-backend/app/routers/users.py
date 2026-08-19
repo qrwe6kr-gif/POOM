@@ -42,6 +42,23 @@ def signup(body: SignupIn, db: Session = Depends(get_db)):
     return {"user_id": u.id, "note": "이후 요청에 X-User-Id 헤더로 이 값을 넣으세요"}
 
 
+class LoginIn(BaseModel):
+    email: str
+
+
+@router.post("/auth/login")
+def login(body: LoginIn, db: Session = Depends(get_db)):
+    """비밀번호 없는 해커톤 간이 로그인.
+
+    이메일로 계정을 찾아 프론트가 이후 X-User-Id 헤더에 넣을 값을 돌려준다.
+    실서비스 전환 시 signup/login/get_current_user를 한 벌로 Supabase Auth(JWT)로 교체한다.
+    """
+    u = db.scalar(select(User).where(User.email == body.email))
+    if not u:
+        raise HTTPException(404, "no account for this email")
+    return {"user_id": u.id, "name": u.name, "preferred_language": u.lang}
+
+
 class SkillIn(BaseModel):
     role: str
     level: str = "junior"

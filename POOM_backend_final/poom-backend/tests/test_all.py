@@ -296,3 +296,18 @@ def test_team_prompt_shape_is_accepted():
                           {"text": "fake", "source_ids": [999]}], "tone_note": "x"}
     o2 = finalize(good, {1, 2}, "ko")
     assert len(o2["decisions"]) == 1 and o2["decisions"][0]["verified"] is True
+
+
+# ---------------- CORS ----------------
+
+def test_cors_preflight_allows_frontend_origin():
+    """Next.js 개발 서버의 preflight 통과 + 커스텀 헤더 X-User-Id 허용."""
+    r = client.options(f"{V1}/me", headers={
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "X-User-Id"})
+    assert r.status_code == 200
+    assert r.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "x-user-id" in r.headers["access-control-allow-headers"].lower()
+    # 헤더 인증 방식이므로 credentials는 켜지 않는다
+    assert "access-control-allow-credentials" not in r.headers

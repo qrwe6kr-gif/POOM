@@ -12,3 +12,6 @@ SLEEP_END_DEFAULT = 7
 WORK_START_DEFAULT = 9
 WORK_END_DEFAULT = 18
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")  # mock | openai
+# 프론트 배포 도메인. 로컬 개발 오리진(localhost:3000)은 코드에 상수로 두고,
+# 배포 후 추가되는 도메인만 이 환경변수로 넣는다.
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")

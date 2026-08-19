@@ -16,8 +16,9 @@
 | POST | /me/needs | 필요 역량 등록 {role, note} |
 | GET | /users/{id} | 상대 프로필 |
 | GET | /matching?role= | 내 니즈 ↔ 상대 스킬 매칭, **overlap_hours**(오늘 근무 겹침) 내림차순 |
-| GET | /users/{id}/status | **Timezone Status** — state: working·sleeping·soon·away + next_response_utc. 협업 관계가 있는 상대만 조회 가능(403) |
-| POST | /collabs | 협업 요청 {provider_id, title, scope, credit_amount(건당 확정 견적)} |
+| GET | /users/{id}/status | **Timezone Status** — state + next_response_utc + last_active(최근 접속). 협업 관계가 있는 상대만 조회 가능(403) |
+| POST | /collabs | 협업 요청 {provider_id, title, scope, credit_amount(건당 확정 견적), deadline?} |
+| GET | /collabs/{id} | 협업방 단건 상세 — 제목·작업 목표·마감일·참여자·내 역할 |
 | POST | /collabs/{id}/accept | 공급자 수락 → **의뢰자 크레딧 hold(에스크로 잠금)** → agreed. 잔액 부족 시 400 |
 | POST | /collabs/{id}/complete | 완료 확인. 양측 모두 확인되는 순간 **release(지급)** → completed |
 | POST | /collabs/{id}/cancel | 취소. agreed 상태였다면 **refund(반환)** |
@@ -52,6 +53,7 @@
 - 프론트 규칙: 각 항목의 `source_ids`는 **원문 메시지로 점프하는 링크**로 렌더링한다
   (심사 즉석 검증 대응이자 UI/UX 포인트).
 - 발동 조건(자동): 미커버 메시지 존재 ∧ 마지막 발화자 ≠ 나 ∧ 경과 ≥ 3시간.
+- 응답의 `is_read`: 수신자가 답변을 전송하면 자동으로 true(확인 완료) 전환. `tone_note`는 '추천 답변'(답장 초안)으로 노출.
 
 ## 오류 규약
 - 401 인증 없음/불명 사용자 · 403 권한 없음(비참여자, 상태 조회 제한) · 404 대상 없음 · 400 규칙 위반(잔액 부족, 이중 정산, 상태 전이 불가 등 — detail에 사유)

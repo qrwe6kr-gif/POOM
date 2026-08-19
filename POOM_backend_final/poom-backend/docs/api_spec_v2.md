@@ -31,6 +31,7 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
   "status": "SLEEPING",
   "status_label": "수면 중 (답장이 늦어질 수 있습니다)",
   "next_response_utc": "2026-08-18T16:00:00Z",
+  "last_active_at": "2026-08-18T11:30:00Z",
   "last_active_hours_ago": 4.5
 }
 ```
@@ -44,7 +45,9 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 
 `GET /api/v1/matching` — (초안 누락) 내 필요 역량 ↔ 상대 주특기 교차 매칭, **오늘 근무 겹침 시간(overlap_hours)** 내림차순.
 
-`POST /api/v1/projects` — 협업 요청 생성. body: worker_id, title, agreed_credits(**기본값 없음 — 합의값을 명시**). 상태 `MATCHED`.
+`POST /api/v1/projects` — 협업 요청 생성. body: worker_id, title, agreed_credits(**기본값 없음 — 합의값을 명시**), deadline(선택, ISO8601). 상태 `MATCHED`.
+
+`GET /api/v1/projects/{project_id}` — 협업방 단건 상세(제목·작업 목표·마감일·참여자·내 역할) — 협업방 헤더 렌더링용.
 
 `POST /api/v1/projects/{project_id}/accept` — **[신설 · 필수]** 작업자 수락.
 
@@ -88,7 +91,7 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 ```json
 {
   "digest_id": 101, "project_id": 1, "language": "en",
-  "trigger": "auto", "generated": true,
+  "trigger": "auto", "generated": true, "is_read": false,
   "unread_message_count": 8,
   "covers_to_message_id": 42,
   "digest": {
@@ -106,6 +109,10 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 - `verified: false`는 LLM이 근거를 제공하지 않은 항목(UI에 '미확인' 배지). 존재하지 않는 메시지를
   근거로 주장한 항목은 서버가 폐기한다.
 - 프론트 규칙: `source_ids`는 해당 원문 메시지로 점프하는 링크로 렌더링한다.
+- `tone_cushioned_message`는 **'추천 답변'** — 수신자가 편집해 그대로 전송할 수 있는 답장 초안이며,
+  답장 입력창에 프리필한다.
+- **확인 완료 규칙** — 수신자가 협업방에 답변을 전송하면 해당 다이제스트는 `is_read: true`
+  (확인 완료)로 전환된다. 별도 호출이 필요 없다.
 
 ---
 

@@ -43,7 +43,7 @@ def set_time(body: TimeIn, db: Session = Depends(get_db)):
 def seed(db: Session = Depends(get_db)):
     """한국 개발자 ↔ 미국 서부 디자이너 시연 시나리오를 생성한다."""
     tag = get_now().strftime("%H%M%S")
-    kr = User(name="지호(KR·Dev)", email=f"kr_{tag}@demo.poom", country="KR",
+    kr = User(name="민준(KR·Dev)", email=f"kr_{tag}@demo.poom", country="KR",
               tz="Asia/Seoul", lang="ko", created_at=get_now())
     us = User(name="Alex(US·Design)", email=f"us_{tag}@demo.poom", country="US",
               tz="America/Los_Angeles", lang="en", created_at=get_now())
@@ -57,18 +57,18 @@ def seed(db: Session = Depends(get_db)):
 
     # 가상 시각 기준선: KST 저녁, LA 새벽 직전 구도를 만들기 좋은 시각
     base = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    c = Collab(requester_id=kr.id, provider_id=us.id, title="로고 + 키 비주얼",
-               scope="다크 네이비 톤 로고 1종, 키 비주얼 1장", credit_amount=60,
-               created_at=base)
+    c = Collab(requester_id=kr.id, provider_id=us.id, title="랜딩페이지 UI 제작",
+               scope="모바일 메인 화면 시안 제작", credit_amount=60,
+               created_at=base, deadline=base + timedelta(hours=34))
     db.add(c); db.flush()
     ledger.hold(db, c, base)
     c.status = "agreed"; c.agreed_at = base
 
-    script = ["Hi! Excited to work on your logo.",                       # US
-              "반갑습니다! 로고 방향은 다크 네이비로 확정할게요",          # KR — 결정
-              "폰트는 아직 고민 중이에요, 후보 2개 추려볼게요",           # KR — 미결정
-              "수요일까지 첫 시안 부탁드립니다!",                         # KR — 액션
-              "혹시 최종본은 SVG로 받을 수 있을까요?"]                    # KR — 질문
+    script = ["Hi! Ready to start on the landing page.",                # US
+              "메인 화면 시안을 만들어 주세요. 모바일 화면을 먼저 제작해 주세요.",  # KR
+              "메인 컬러는 파란색으로 결정했습니다",                       # KR — 결정
+              "버튼은 라운드형과 사각형 중 어떤 것이 좋을까요?",           # KR — 질문
+              "내일 오전까지 초안을 부탁드립니다"]                         # KR — 액션
     senders = [us.id, kr.id, kr.id, kr.id, kr.id]
     for i, (sid, text) in enumerate(zip(senders, script)):
         db.add(Message(collab_id=c.id, sender_id=sid, body=text,

@@ -17,6 +17,7 @@ create table if not exists users (
   sleep_end    int          not null default 7,
   is_pro       boolean      not null default false,
   demo_now     timestamptz,          -- 데모 모드: 계정별 가상 '현재 시각'
+  last_active_at timestamptz,         -- 마지막 접속(요청) 시각
   created_at   timestamptz
 );
 
@@ -44,6 +45,7 @@ create table if not exists collabs (
   title               varchar(160) not null,
   scope               text not null default '',
   credit_amount       int  not null check (credit_amount > 0),  -- 건당 확정 견적
+  deadline            timestamptz,
   status              varchar(20) not null default 'requested',
   requester_confirmed boolean not null default false,
   provider_confirmed  boolean not null default false,
@@ -93,6 +95,7 @@ create table if not exists relay_digests (
   trigger              varchar(10) not null,      -- auto | manual
   covers_to_message_id int not null,
   payload              jsonb not null,
+  is_read              boolean not null default false,  -- 수신자 답변 전송 시 확인 완료
   created_at           timestamptz
 );
 create index if not exists idx_digest_lookup on relay_digests(collab_id, for_user_id, id desc);

@@ -18,7 +18,9 @@ Output strict JSON with these 6 keys:
 3. "pending": Items that still require discussion
 4. "key_questions": Urgent/key questions the recipient must answer
 5. "action_items": Immediate actionable tasks for recipient
-6. "tone_cushioned_message": A culturally polite, warm greeting that bridges timezone gaps
+6. "tone_cushioned_message": A culturally polite REPLY DRAFT the recipient can edit and
+   send back as-is (acknowledge the requests + state the next step). UI에서는 '추천 답변'
+   라벨로 노출되며, 답장 입력창에 프리필된다.
 
 GROUNDING RULES (mandatory):
 - Each entry in keys 2-5 must be an object:

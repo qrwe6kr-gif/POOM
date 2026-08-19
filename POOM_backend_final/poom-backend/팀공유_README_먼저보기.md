@@ -2,6 +2,7 @@
 
 코드는 GitHub 저장소로 공유하며, 문서는 본 파일 하나로 전달한다.
 구성: 빠른 시작 → 역할별 안내 → API 명세 v2 → DB 스키마 v2 → AI 프롬프트 규칙 → 시연 가이드.
+3일 MVP 플로우(AI Relay 다이제스트 중심 8단계) 기준으로 정합을 맞춘 판이다.
 
 ---
 
@@ -11,21 +12,28 @@
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload
 # 브라우저: http://127.0.0.1:8000/docs  (Swagger에서 전 API 클릭 실행 가능)
-pytest -q   # 8건 통과가 정상 — 5단계 시연 리허설이 테스트로 코드화되어 있음
+pytest -q   # 8건 통과가 정상 — 시연 리허설이 테스트로 코드화되어 있음
 ```
 
 ## 1. 역할별 안내
 
-**프론트엔드** — 인증은 `X-User-Id` 헤더(가입 응답의 user_id). 채팅은 `GET /messages` 3~5초 폴링.
-채팅방 진입 시 `GET /relay-digest` 1회 호출(자동 생성은 서버가 판단). 다이제스트 각 항목의
-`source_ids`는 원문 메시지로 점프하는 링크로 렌더링한다. 상세는 아래 2장.
+**프론트엔드** — 인증은 `X-User-Id` 헤더. 협업방 헤더는 `GET /projects/{id}`(제목·작업 목표·마감일·참여자) +
+`GET /users/{id}/status`(현지 시간·상태·다음 근무 시작·최근 접속)로 그린다. 채팅은 `GET /messages` 3~5초 폴링,
+채팅방 진입 시 `GET /relay-digest` 1회 호출(자동 생성은 서버가 판단). 다이제스트의 `source_ids`는 원문 점프 링크,
+`tone_cushioned_message`는 **'추천 답변'으로 답장 입력창에 프리필**한다. 수신자가 답변을 전송하면
+다이제스트는 자동으로 확인 완료(`is_read: true`)가 된다.
 
 **백엔드 B (AI)** — 교체 지점은 `app/engines/digest.py`의 `OpenAIProvider.generate()` 하나다.
 아래 4장의 프롬프트 규칙대로 LangChain 체인을 연결해 dict를 반환하면, 키 이름 차이 흡수(어댑터)·
 근거 검증(환각 게이트)·장애 시 Mock 폴백이 이미 동작한다. 전환은 환경변수 `LLM_PROVIDER=openai`.
 
-**기획·발표** — 시연은 `/demo/seed` 1회 + `/demo/time`(가상 시각 전진)으로 5단계를 재현한다(5장).
-크레딧 질의 대응 논리는 별도 설명서(PDF) 참조.
+**기획·발표** — 시연은 `/demo/seed` 1회 + `/demo/time`(가상 시각 전진)으로 8단계 플로우를 재현한다(5장).
+
+## 참고 — 3일 MVP 범위와 코드의 관계
+
+확정 플로우대로 **로그인·메이커 검색·매칭은 시연 경로에서 제외**한다. 다만 매칭 API와 간이 인증은
+코드에 이미 구현되어 있으며, 시연에 사용하지 않을 뿐 유지 비용이 없으므로 제거하지 않는다
+(발표 Q&A에서 "다음 단계"로 언급 가능).
 
 ---
 
@@ -62,6 +70,7 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
   "status": "SLEEPING",
   "status_label": "수면 중 (답장이 늦어질 수 있습니다)",
   "next_response_utc": "2026-08-18T16:00:00Z",
+  "last_active_at": "2026-08-18T11:30:00Z",
   "last_active_hours_ago": 4.5
 }
 ```
@@ -75,7 +84,9 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 
 `GET /api/v1/matching` — (초안 누락) 내 필요 역량 ↔ 상대 주특기 교차 매칭, **오늘 근무 겹침 시간(overlap_hours)** 내림차순.
 
-`POST /api/v1/projects` — 협업 요청 생성. body: worker_id, title, agreed_credits(**기본값 없음 — 합의값을 명시**). 상태 `MATCHED`.
+`POST /api/v1/projects` — 협업 요청 생성. body: worker_id, title, agreed_credits(**기본값 없음 — 합의값을 명시**), deadline(선택, ISO8601). 상태 `MATCHED`.
+
+`GET /api/v1/projects/{project_id}` — 협업방 단건 상세(제목·작업 목표·마감일·참여자·내 역할) — 협업방 헤더 렌더링용.
 
 `POST /api/v1/projects/{project_id}/accept` — **[신설 · 필수]** 작업자 수락.
 
@@ -119,7 +130,7 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 ```json
 {
   "digest_id": 101, "project_id": 1, "language": "en",
-  "trigger": "auto", "generated": true,
+  "trigger": "auto", "generated": true, "is_read": false,
   "unread_message_count": 8,
   "covers_to_message_id": 42,
   "digest": {
@@ -137,6 +148,10 @@ DB 스키마 v2와 정합하며, 명세된 동작은 전부 서버 코드로 구
 - `verified: false`는 LLM이 근거를 제공하지 않은 항목(UI에 '미확인' 배지). 존재하지 않는 메시지를
   근거로 주장한 항목은 서버가 폐기한다.
 - 프론트 규칙: `source_ids`는 해당 원문 메시지로 점프하는 링크로 렌더링한다.
+- `tone_cushioned_message`는 **'추천 답변'** — 수신자가 편집해 그대로 전송할 수 있는 답장 초안이며,
+  답장 입력창에 프리필한다.
+- **확인 완료 규칙** — 수신자가 협업방에 답변을 전송하면 해당 다이제스트는 `is_read: true`
+  (확인 완료)로 전환된다. 별도 호출이 필요 없다.
 
 ---
 
@@ -225,6 +240,7 @@ CREATE TABLE projects (
     title VARCHAR(200) NOT NULL,
     -- [수정] DEFAULT 100 제거 — 견적은 '건당 확정 합의값'이므로 기본값이 있으면 안 된다.
     agreed_credits INT NOT NULL CHECK (agreed_credits > 0),
+    deadline TIMESTAMPTZ,                       -- 협업방 헤더에 표시되는 마감일
     -- [수정] 시작 상태는 MATCHED. 흐름: MATCHED → IN_PROGRESS(수락 = HOLD 발생)
     --        → COMPLETED(양측 확인 = RELEASE) / CANCELLED(REFUND).
     --        초안에는 취소 상태가 없어 환불 경로가 표현 불가였다.
@@ -339,7 +355,9 @@ Output strict JSON with these 6 keys:
 3. "pending": Items that still require discussion
 4. "key_questions": Urgent/key questions the recipient must answer
 5. "action_items": Immediate actionable tasks for recipient
-6. "tone_cushioned_message": A culturally polite, warm greeting that bridges timezone gaps
+6. "tone_cushioned_message": A culturally polite REPLY DRAFT the recipient can edit and
+   send back as-is (acknowledge the requests + state the next step). UI에서는 '추천 답변'
+   라벨로 노출되며, 답장 입력창에 프리필된다.
 
 GROUNDING RULES (mandatory):
 - Each entry in keys 2-5 must be an object:
@@ -366,14 +384,16 @@ GROUNDING RULES (mandatory):
 
 ---
 
-## 5. 시연 가이드 (5단계)
+## 5. 시연 가이드 (팀 플로우 8단계 대응)
 
-1. `POST /demo/seed` → 한국 개발자(지호)·미국 디자이너(Alex)·진행 중 협업(60c 잠금)·대화 5건 생성
-2. `POST /demo/time` 으로 두 계정의 가상 시각을 +11h 전진 → `GET /users/{us}/status` = SLEEPING
-3. 지호가 수면 중인 상대에게 추가 메시지 전송
-4. 가상 시각을 +17h 지점으로 전진 → Alex로 `GET /relay-digest` → 접속 순간 다이제스트 자동 생성
-   (6필드 · 영어 · 전 항목 근거 연결)
-5. 양측 `POST /complete` → 60c 지급(잔액 40/160) → 리뷰 양측 제출 시 동시 공개
+1. `POST /demo/seed` → 사전 생성 협업방: 민준(KR·개발) ↔ Alex(US·디자인), 프로젝트 "랜딩페이지 UI 제작"
+   (작업 목표·마감일 포함, 60c 잠금), 팀 플로우 대본과 동일한 메시지 5건(파란색 결정·버튼 질문·내일 오전 기한)
+2. 민준 화면: `GET /projects/{id}` 협업방 정보 + `GET /users/{alex}/status` → 비근무·다음 근무 시작 시각 확인
+3. (필요 시 추가 메시지 전송 — Step 3·4)
+4. **시간 경과 버튼** = `POST /demo/time`으로 두 계정의 가상 시각 전진
+5. **Alex 접속** = Alex의 X-User-Id로 `GET /relay-digest` → 접속 순간 다이제스트 자동 생성
+   (진행·결정·미결정·핵심 질문·Action Item·추천 답변, 전 항목 근거 연결)
+6. Alex가 추천 답변을 수정해 `POST /messages` 전송 → 다이제스트 자동 '확인 완료' → 협업 재개(Step 7·8)
 
 주의: `/demo/*`는 인증 없는 시연 전용 기능이므로 실제 배포 시 제거한다(`app/main.py`에서 한 줄).
 

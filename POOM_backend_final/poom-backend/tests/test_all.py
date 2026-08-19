@@ -233,6 +233,8 @@ def test_demo_flow_end_to_end():
     # [5] 완료 → 지급 → 상호 평가 동시 공개
     client.post(f"/collabs/{cid}/messages", json={"body": "Got it! Draft by Wed."},
                 headers=H(us))
+    # Step 8: 답변 전송 시 다이제스트 '확인 완료'(is_read) 전환
+    assert client.get(f"/collabs/{cid}/digest", headers=H(us)).json()["is_read"] is True
     client.post(f"/collabs/{cid}/complete", headers=H(us))
     r = client.post(f"/collabs/{cid}/complete", headers=H(kr)).json()
     assert r["settled"] is True

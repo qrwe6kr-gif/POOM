@@ -38,6 +38,7 @@ class User(Base):
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
     # 데모 모드: 이 계정의 '현재 시각'을 강제로 고정 (없으면 실제 시각)
     demo_now: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -71,6 +72,7 @@ class Collab(Base):
     title: Mapped[str] = mapped_column(String(160))
     scope: Mapped[str] = mapped_column(Text, default="")
     credit_amount: Mapped[int] = mapped_column(Integer)     # 건당 확정 견적
+    deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="requested")
     requester_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     provider_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -111,6 +113,7 @@ class RelayDigest(Base):
     trigger: Mapped[str] = mapped_column(String(10))        # auto | manual
     covers_to_message_id: Mapped[int] = mapped_column(Integer)
     payload: Mapped[dict] = mapped_column(JSON)             # 6필드 + 항목별 source_ids
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)  # 수신자 답변 전송 시 '확인 완료'
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

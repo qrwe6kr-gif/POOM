@@ -34,6 +34,7 @@ class CollabIn(BaseModel):
     title: str
     scope: str = ""
     credit_amount: int
+    deadline: Optional[str] = None   # ISO8601
 
 
 @router.post("/collabs")
@@ -44,7 +45,13 @@ def request_collab(body: CollabIn, me: User = Depends(get_current_user),
         raise HTTPException(400, "credit_amount must be positive")
     if not db.get(User, body.provider_id):
         raise HTTPException(404, "no such provider")
-    c = Collab(requester_id=me.id, created_at=get_now(me), **body.model_dump())
+    from datetime import datetime, timezone
+    data = body.model_dump()
+    dl = data.pop("deadline", None)
+    if dl:
+        d = datetime.fromisoformat(dl.replace("Z", "+00:00"))
+        data["deadline"] = d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    c = Collab(requester_id=me.id, created_at=get_now(me), **data)
     db.add(c)
     db.commit()
     return {"collab_id": c.id, "status": c.status}
@@ -107,6 +114,19 @@ def cancel(collab_id: str, me: User = Depends(get_current_user), db: Session = D
     return {"status": c.status}
 
 
+@router.get("/collabs/{collab_id}")
+def collab_detail(collab_id: str, me: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    c = _get_collab_for(db, collab_id, me)
+    req, prov = db.get(User, c.requester_id), db.get(User, c.provider_id)
+    return {"id": c.id, "title": c.title, "scope": c.scope, "status": c.status,
+            "credit_amount": c.credit_amount,
+            "deadline": c.deadline.isoformat() if c.deadline else None,
+            "participants": [{"id": u.id, "name": u.name, "tz": u.tz, "country": u.country}
+                             for u in (req, prov)],
+            "my_role": "requester" if c.requester_id == me.id else "provider"}
+
+
 @router.get("/collabs")
 def my_collabs(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(Collab).where(
@@ -129,6 +149,10 @@ def send_message(collab_id: str, body: MessageIn, me: User = Depends(get_current
     c = _get_collab_for(db, collab_id, me)
     m = Message(collab_id=c.id, sender_id=me.id, body=body.body, created_at=get_now(me))
     db.add(m)
+    for d in db.scalars(select(RelayDigest).where(RelayDigest.collab_id == c.id,
+                                                  RelayDigest.for_user_id == me.id,
+                                                  RelayDigest.is_read == False)):  # noqa: E712
+        d.is_read = True
     db.commit()
     return {"message_id": m.id, "created_at": m.created_at.isoformat()}
 
@@ -163,6 +187,7 @@ def _digest_out(d: Optional[RelayDigest]) -> dict:
     if d is None:
         return {"digest": None}
     return {"digest": d.payload, "id": d.id, "lang": d.lang, "trigger": d.trigger,
+            "is_read": d.is_read,
             "covers_to_message_id": d.covers_to_message_id,
             "created_at": d.created_at.isoformat() if d.created_at else None}
 

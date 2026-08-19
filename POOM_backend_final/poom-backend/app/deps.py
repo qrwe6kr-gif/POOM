@@ -20,4 +20,7 @@ def get_current_user(x_user_id: str = Header(...), db: Session = Depends(get_db)
     user = db.get(User, x_user_id)
     if not user:
         raise HTTPException(401, "unknown user (X-User-Id)")
+    from .timeutil import get_now
+    user.last_active_at = get_now(user)
+    db.commit()
     return user

@@ -125,7 +125,13 @@ def user_status(user_id: str, me: User = Depends(get_current_user), db: Session 
         raise HTTPException(404, "no such user")
     if target.id != me.id and not _has_collab_between(db, me.id, target.id):
         raise HTTPException(403, "status visible to collaboration partners only")
+    now = get_now(me)
     st = compute_status(target.tz, target.work_start, target.work_end,
-                        target.sleep_start, target.sleep_end, get_now(me))
+                        target.sleep_start, target.sleep_end, now)
+    from ..timeutil import aware
+    la = aware(target.last_active_at)
+    hours_ago = round((now - la).total_seconds() / 3600, 1) if la else None
     return {"user_id": target.id, "name": target.name, "local_time": st.local_time,
-            "state": st.state, "next_response_utc": st.next_response_utc}
+            "state": st.state, "next_response_utc": st.next_response_utc,
+            "last_active_at": la.isoformat() if la else None,
+            "last_active_hours_ago": hours_ago}

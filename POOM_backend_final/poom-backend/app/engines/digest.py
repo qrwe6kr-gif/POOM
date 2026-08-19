@@ -78,10 +78,10 @@ class MockProvider:
                      for m in msgs if m.body.strip().endswith("?")][:3]
         actions = [{"task": m.body, "assignee": ctx.receiver_name, "deadline": None,
                     "source_ids": [m.id]} for m in msgs if has(m, ACTION_HINTS)]
-        tone = ("좋은 아침이에요! 자는 동안 온 내용 정리해 뒀어요 — 아래 핵심 질문부터 확인해 주세요."
+        tone = ("요구사항 확인했습니다. 핵심 질문에 답 주시는 대로 바로 진행하겠습니다."
                 if ko else
-                f"Good morning {ctx.receiver_name}! Here's what happened while you were away — "
-                "start with the key questions below.")
+                "Got it — I've reviewed your requests. I'll start right away once "
+                "I answer the key questions above.")
         return {"relay_summary": summary, "decisions": decisions, "open_items": opens,
                 "key_questions": questions, "action_items": actions, "tone_note": tone}
 

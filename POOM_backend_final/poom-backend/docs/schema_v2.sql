@@ -61,6 +61,7 @@ CREATE TABLE projects (
     title VARCHAR(200) NOT NULL,
     -- [수정] DEFAULT 100 제거 — 견적은 '건당 확정 합의값'이므로 기본값이 있으면 안 된다.
     agreed_credits INT NOT NULL CHECK (agreed_credits > 0),
+    deadline TIMESTAMPTZ,                       -- 협업방 헤더에 표시되는 마감일
     -- [수정] 시작 상태는 MATCHED. 흐름: MATCHED → IN_PROGRESS(수락 = HOLD 발생)
     --        → COMPLETED(양측 확인 = RELEASE) / CANCELLED(REFUND).
     --        초안에는 취소 상태가 없어 환불 경로가 표현 불가였다.

@@ -22,7 +22,7 @@ app/
   engines/
     status.py          # Timezone Status — 순수 함수(근무/수면/출근예정/자리비움 + 예상 응답 시각)
     relay.py           # 릴레이 트리거 — 지연 평가(접속 시 조건 검사, 크론 없음)
-    ledger.py          # 원장: hold/release/refund, 이중 정산 DB 제약으로 차단
+    ledger.py          # 원장: HOLD/RELEASE/REFUND, 이중 정산 DB 제약으로 차단
     digest.py          # 6필드 다이제스트 + grounding 게이트 + Mock/OpenAI 프로바이더
   routers/
     users.py           # 가입(+100c)·프로필·매칭(겹침 시간 정렬)·상태(프라이버시 규칙)
@@ -63,10 +63,65 @@ curl -X POST /api/v1/demo/time -d '{"user_ids": ["<kr>", "<us>"], "now": "2026-0
 시차 수면 → 부재 중 메시지 → 기상 즉시 다이제스트 자동 생성 → 지급(40c/160c) → 상호 평가 동시 공개까지
 API 호출 순서 그대로 코드화되어 있다.
 
+## 배포 (Railway 기준)
+
+Railway는 Dockerfile 없이도(Nixpacks) 뜨지만, 저장소의 `Dockerfile`이 있으면 그것을 쓴다.
+어느 쪽이든 시작 커맨드는 동일하다 — 플랫폼이 주입하는 `PORT`로 바인딩한다.
+
+1. **레포 연결** — Railway에서 New Project → Deploy from GitHub repo → 이 저장소 선택.
+   루트 디렉터리를 `poom-backend`로 지정한다(레포 루트가 아니라면).
+2. **PostgreSQL 추가** — 같은 프로젝트에 New → Database → Add PostgreSQL.
+   붙이면 `DATABASE_URL`이 서비스에 **자동 주입**된다. 값을 직접 적을 필요는 없다.
+   Railway가 주는 `postgres://` 접두사는 `app/config.py`가 `postgresql+psycopg://`로
+   자동 변환하므로 그대로 두면 된다.
+3. **환경변수 설정** — Variables 탭에 아래 둘만 추가한다.
+
+   | 키 | 값 | 비고 |
+   |---|---|---|
+   | `FRONTEND_ORIGIN` | 프론트 배포 도메인 (예: `https://poom.vercel.app`) | CORS 허용 목록에 추가된다. `http://localhost:3000`은 코드에 이미 있다 |
+   | `LLM_PROVIDER` | `mock` | 실제 LLM 연결 전까지는 mock. 시연은 mock으로도 전부 동작한다 |
+
+   `DATABASE_URL`은 2단계에서 자동으로 들어온다. `OPENAI_API_KEY`는 실제 모델을 붙일 때만 넣는다.
+4. **배포 확인** — 첫 배포에서 `init_db()`가 PostgreSQL에 테이블을 생성한다
+   (별도 마이그레이션 명령 없음). 아래 curl 3종으로 확인한다.
+
+### 배포 직후 검증 (curl 3종)
+
+`$BASE`를 배포 도메인으로 두고 순서대로 실행한다.
+
+```bash
+BASE=https://<your-app>.up.railway.app
+
+# 1) 살아 있는가
+curl -s $BASE/health
+# → {"ok":true}
+
+# 2) DB 쓰기·읽기가 되는가 (시드 생성 — 유저 2명·프로젝트 1건·메시지 5건 + 60c HOLD)
+curl -s -X POST $BASE/api/v1/demo/seed
+# → {"kr_user_id":"...","us_user_id":"...","project_id":"...","virtual_now":"...","demo_steps":[...]}
+
+# 3) AI Relay 다이제스트가 생성되는가 (위 응답의 us_user_id / project_id 사용)
+curl -s -X POST $BASE/api/v1/projects/<project_id>/relay-digest -H "X-User-Id: <us_user_id>"
+# → {"generated":true, "digest":{"summary":[...],"decisions":[...],...}, ...}
+#    decisions가 비어 있지 않고 각 항목에 source_ids가 있으면 전 파이프라인 정상.
+```
+
+3번이 통과하면 원장(HOLD)·메시지·다이제스트 생성·근거 검증까지 한 번에 확인된 것이다.
+CORS는 별도로 한 번 확인한다 — `FRONTEND_ORIGIN`을 설정한 뒤 그 도메인으로 preflight를 보내
+`access-control-allow-origin`이 돌아오는지 본다.
+
+```bash
+curl -i -X OPTIONS $BASE/api/v1/me -H "Origin: https://poom.vercel.app" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: X-User-Id"
+```
+
+> 데모 라우터(`/api/v1/demo/*`)는 **해커톤 기간 한정으로 배포본에 포함**한다.
+> 심사 시연에 필요하기 때문이며, 해커톤 종료 후에는 아래 '보안·배포 주의'대로 제거한다.
+
 ## 보안·배포 주의 (공개 저장소일 경우 필독)
 
 - `/api/v1/demo/time`, `/api/v1/demo/seed`는 **인증 없는 시연 전용 백도어**다. 계정의 '현재 시각'을 바꾸고
-  데이터를 생성할 수 있으므로, 실제 배포 시에는 라우터 등록을 제거하거나 관리자 인증을 걸 것
+  데이터를 생성할 수 있다. 해커톤 기간에는 심사 시연에 필요하므로 배포본에 포함하지만,
+  **해커톤 종료 후에는 라우터 등록을 제거하거나 관리자 인증을 걸 것**
   (`app/main.py`에서 `demo.router` 한 줄 제거로 차단된다).
 - `X-User-Id` 헤더 인증은 해커톤용 간이 방식이며 위조가 가능하다. 공개 서비스 전에는
   `app/deps.py`의 `get_current_user`를 Supabase Auth(JWT 검증)로 반드시 교체할 것.
@@ -77,7 +132,7 @@ API 호출 순서 그대로 코드화되어 있다.
 | 항목 | 값 |
 |---|---|
 | 초기 지갑 | 100c (10c ≈ 표준 1시간 상당) |
-| 견적 | 건당 확정, 합의 시 hold → 양측 완료 확인 시 release |
+| 견적 | 건당 확정, 수락 시 HOLD → 양측 완료 확인 시 RELEASE |
 | 무응답 임계 | 3시간 (수신자 접속 시 지연 생성) |
 | 다이제스트 | 6필드 + 항목별 source_ids(근거 필수), 수신자 모국어 |
-| 상태 판정 | working / sleeping / soon(출근 ≤3h) / away |
+| 상태 판정 | WORKING / SLEEPING / STARTING_SOON(출근 ≤3h) / AWAY |

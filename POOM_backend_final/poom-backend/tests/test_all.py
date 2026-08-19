@@ -60,8 +60,8 @@ def test_status_states():
 class Msg:
     id: int
     sender_id: str
-    created_at: datetime
-    body: str = ""
+    sent_at: datetime
+    content: str = ""
 
 
 def test_relay_trigger_conditions():
@@ -91,10 +91,10 @@ def test_digest_mock_and_grounding_gate():
             Msg(5, "kr", t0, "SVG로 가능할까요?")]
 
     class R:
-        name, lang = "Alex", "en"
+        name, preferred_language = "Alex", "en"
 
-    raw = MockProvider().generate(DigestContext(msgs, R.name, R.lang, "지호"))
-    out = finalize(raw, {m.id for m in msgs}, R.lang)
+    raw = MockProvider().generate(DigestContext(msgs, R.name, R.preferred_language, "지호"))
+    out = finalize(raw, {m.id for m in msgs}, R.preferred_language)
     assert any(2 in i["source_ids"] for i in out["decisions"])
     assert any(3 in i["source_ids"] for i in out["open_items"])
     assert any(4 in i["source_ids"] for i in out["action_items"])
@@ -112,7 +112,7 @@ def test_digest_mock_and_grounding_gate():
 
 def test_ledger_hold_release_refund():
     from app.db import SessionLocal
-    from app.models import Collab, User
+    from app.models import Project, User
     db = SessionLocal()
     now = datetime.now(UTC)
     a = User(name="a", email="a@t.t"); b = User(name="b", email="b@t.t")
@@ -122,7 +122,7 @@ def test_ledger_hold_release_refund():
     db.commit()
     assert ledger.balance(db, a.id) == 100
 
-    c = Collab(requester_id=a.id, provider_id=b.id, title="t", credit_amount=60)
+    c = Project(requester_id=a.id, worker_id=b.id, title="t", agreed_credits=60)
     db.add(c); db.flush()
     ledger.hold(db, c, now); db.commit()
     assert ledger.balance(db, a.id) == 40
@@ -142,13 +142,13 @@ def test_ledger_hold_release_refund():
     except ValueError:
         db.rollback()
 
-    c2 = Collab(requester_id=a.id, provider_id=b.id, title="t2", credit_amount=40)
+    c2 = Project(requester_id=a.id, worker_id=b.id, title="t2", agreed_credits=40)
     db.add(c2); db.flush()
     ledger.hold(db, c2, now)
     ledger.refund(db, c2, now); db.commit()
     assert ledger.balance(db, a.id) == 40
     # 잔액 부족 hold 차단
-    c3 = Collab(requester_id=a.id, provider_id=b.id, title="t3", credit_amount=999)
+    c3 = Project(requester_id=a.id, worker_id=b.id, title="t3", agreed_credits=999)
     db.add(c3); db.flush()
     try:
         ledger.hold(db, c3, now); assert False

@@ -27,5 +27,5 @@ def should_generate(viewer_id: str, messages, last_covered_id, now_utc: datetime
     last = messages[-1]
     if last.sender_id == viewer_id:
         return False, unc
-    elapsed_h = (now_utc - aware(last.created_at)).total_seconds() / 3600
+    elapsed_h = (now_utc - aware(last.sent_at)).total_seconds() / 3600
     return elapsed_h >= threshold_hours, unc

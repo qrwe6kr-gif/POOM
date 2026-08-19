@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_db
 from ..engines import ledger
-from ..models import Collab, Message, Need, Skill, User
+from ..models import Message, Need, Project, Skill, User
 from ..timeutil import get_now
 
 router = APIRouter()
@@ -44,25 +44,25 @@ def seed(db: Session = Depends(get_db)):
     """한국 개발자 ↔ 미국 서부 디자이너 시연 시나리오를 생성한다."""
     tag = get_now().strftime("%H%M%S")
     kr = User(name="민준(KR·Dev)", email=f"kr_{tag}@demo.poom", country="KR",
-              tz="Asia/Seoul", lang="ko", created_at=get_now())
+              timezone="Asia/Seoul", preferred_language="ko", created_at=get_now())
     us = User(name="Alex(US·Design)", email=f"us_{tag}@demo.poom", country="US",
-              tz="America/Los_Angeles", lang="en", created_at=get_now())
+              timezone="America/Los_Angeles", preferred_language="en", created_at=get_now())
     db.add_all([kr, us]); db.flush()
     ledger.grant_signup_bonus(db, kr.id, get_now())
     ledger.grant_signup_bonus(db, us.id, get_now())
-    db.add_all([Skill(user_id=kr.id, role="dev", level="mid"),
-                Need(user_id=kr.id, role="design", note="인디 게임 로고·키비주얼"),
-                Skill(user_id=us.id, role="design", level="mid"),
-                Need(user_id=us.id, role="dev", note="portfolio site")])
+    db.add_all([Skill(user_id=kr.id, skill="dev", level="mid"),
+                Need(user_id=kr.id, skill="design", note="인디 게임 로고·키비주얼"),
+                Skill(user_id=us.id, skill="design", level="mid"),
+                Need(user_id=us.id, skill="dev", note="portfolio site")])
 
     # 가상 시각 기준선: KST 저녁, LA 새벽 직전 구도를 만들기 좋은 시각
     base = get_now().replace(minute=0, second=0, microsecond=0)
-    c = Collab(requester_id=kr.id, provider_id=us.id, title="랜딩페이지 UI 제작",
-               scope="모바일 메인 화면 시안 제작", credit_amount=60,
-               created_at=base, deadline=base + timedelta(hours=34))
+    c = Project(requester_id=kr.id, worker_id=us.id, title="랜딩페이지 UI 제작",
+                scope="모바일 메인 화면 시안 제작", agreed_credits=60,
+                created_at=base, updated_at=base, deadline=base + timedelta(hours=34))
     db.add(c); db.flush()
     ledger.hold(db, c, base)
-    c.status = "agreed"; c.agreed_at = base
+    c.status = "IN_PROGRESS"; c.agreed_at = base
 
     script = ["Hi! Ready to start on the landing page.",                # US
               "메인 화면 시안을 만들어 주세요. 모바일 화면을 먼저 제작해 주세요.",  # KR
@@ -71,8 +71,8 @@ def seed(db: Session = Depends(get_db)):
               "내일 오전까지 초안을 부탁드립니다"]                         # KR — 액션
     senders = [us.id, kr.id, kr.id, kr.id, kr.id]
     for i, (sid, text) in enumerate(zip(senders, script)):
-        db.add(Message(collab_id=c.id, sender_id=sid, body=text,
-                       created_at=base + timedelta(minutes=5 * i)))
+        db.add(Message(project_id=c.id, sender_id=sid, content=text,
+                       sent_at=base + timedelta(minutes=5 * i)))
     for u in (kr, us):
         u.demo_now = base + timedelta(minutes=30)
     db.commit()

@@ -48,7 +48,7 @@ def compute_status(tz: str, work_start: int, work_end: int,
 
 
 def working_at(user, t_utc: datetime) -> bool:
-    local = t_utc.astimezone(ZoneInfo(user.tz))
+    local = t_utc.astimezone(ZoneInfo(user.timezone))
     return in_window(local.hour + local.minute / 60, user.work_start, user.work_end)
 
 

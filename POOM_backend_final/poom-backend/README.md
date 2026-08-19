@@ -18,7 +18,7 @@ app/
   config.py            # 확정 파라미터(초기 100c, 임계 3h 등) — 합의값 변경은 여기서만
   timeutil.py          # get_now(actor): 모든 시간 계산의 단일 관문(데모 모드의 기반)
   contract.py          # 내부 표현 ↔ API 계약 v2의 유일한 변환 경계(응답 직렬화 시점)
-  models.py            # 도메인 모델(잔액 컬럼 없음 — 원장 합산 원칙)
+  models.py            # 도메인 모델 = docs/schema_v2.sql (잔액 컬럼 없음 — 원장 합산 원칙)
   engines/
     status.py          # Timezone Status — 순수 함수(근무/수면/출근예정/자리비움 + 예상 응답 시각)
     relay.py           # 릴레이 트리거 — 지연 평가(접속 시 조건 검사, 크론 없음)
@@ -28,7 +28,7 @@ app/
     users.py           # 가입(+100c)·프로필·매칭(겹침 시간 정렬)·상태(프라이버시 규칙)
     collabs.py         # /projects — 협업 상태 머신·메시지·다이제스트·크레딧·리뷰(동시 공개)
     demo.py            # 데모 모드(가상 시각)·시연 시드
-schema.sql             # Supabase/PostgreSQL DDL (+ user_balances 뷰)
+docs/schema_v2.sql     # DB 스키마 기준본(canonical) — app/models.py와 컬럼 단위 1:1
 docs/api_spec_v2.md    # API 계약 기준본(canonical) — 코드가 이 문서와 1:1로 일치한다
 prompts/digest_prompt.md  # 백엔드 B용 실프롬프트 규칙
 tests/test_all.py      # 단위 + 데모 리허설 통합 테스트

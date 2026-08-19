@@ -29,7 +29,7 @@ class DigestContext:
 
 def build_prompt(ctx: DigestContext) -> str:
     """실제 LLM 호출용 프롬프트. prompts/digest_prompt.md의 규칙과 동일 구조."""
-    numbered = "\n".join(f"[{m.id}] {m.sender_id}: {m.body}" for m in ctx.messages)
+    numbered = "\n".join(f"[{m.id}] {m.sender_id}: {m.content}" for m in ctx.messages)
     return f"""You are POOM's AI Relay engine for cross-timezone collaboration.
 Receiver: {ctx.receiver_name} (language: {ctx.receiver_lang})
 Conversation (numbered):
@@ -60,7 +60,7 @@ class MockProvider:
         ko = ctx.receiver_lang == "ko"
 
         def has(m, hints):
-            b = m.body.lower()
+            b = m.content.lower()
             return any(h in b for h in hints)
 
         msgs = ctx.messages
@@ -68,15 +68,15 @@ class MockProvider:
         if msgs:
             first, last = msgs[0], msgs[-1]
             summary.append({"text": ("부재 중 대화 요약: " if ko else "While you were away: ")
-                                    + first.body[:60], "source_ids": [first.id]})
+                                    + first.content[:60], "source_ids": [first.id]})
             if last.id != first.id:
                 summary.append({"text": ("마지막 메시지: " if ko else "Latest: ")
-                                        + last.body[:60], "source_ids": [last.id]})
-        decisions = [{"text": m.body, "source_ids": [m.id]} for m in msgs if has(m, DECISION_HINTS)]
-        opens = [{"text": m.body, "source_ids": [m.id]} for m in msgs if has(m, OPEN_HINTS)]
-        questions = [{"text": m.body, "source_ids": [m.id]}
-                     for m in msgs if m.body.strip().endswith("?")][:3]
-        actions = [{"task": m.body, "assignee": ctx.receiver_name, "deadline": None,
+                                        + last.content[:60], "source_ids": [last.id]})
+        decisions = [{"text": m.content, "source_ids": [m.id]} for m in msgs if has(m, DECISION_HINTS)]
+        opens = [{"text": m.content, "source_ids": [m.id]} for m in msgs if has(m, OPEN_HINTS)]
+        questions = [{"text": m.content, "source_ids": [m.id]}
+                     for m in msgs if m.content.strip().endswith("?")][:3]
+        actions = [{"task": m.content, "assignee": ctx.receiver_name, "deadline": None,
                     "source_ids": [m.id]} for m in msgs if has(m, ACTION_HINTS)]
         tone = ("요구사항 확인했습니다. 핵심 질문에 답 주시는 대로 바로 진행하겠습니다."
                 if ko else
@@ -168,9 +168,9 @@ def finalize(raw: dict, valid_ids: set, lang: str) -> dict:
 
 def generate_digest(provider, messages: List, receiver, sender_name: str) -> dict:
     ctx = DigestContext(messages=messages, receiver_name=receiver.name,
-                        receiver_lang=receiver.lang, sender_name=sender_name)
+                        receiver_lang=receiver.preferred_language, sender_name=sender_name)
     try:
         raw = provider.generate(ctx)
     except Exception:
         raw = MockProvider().generate(ctx)   # LLM 장애 폴백 — 시연 보험
-    return finalize(raw, {m.id for m in messages}, receiver.lang)
+    return finalize(raw, {m.id for m in messages}, receiver.preferred_language)

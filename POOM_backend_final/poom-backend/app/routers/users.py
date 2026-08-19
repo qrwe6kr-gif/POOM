@@ -9,14 +9,13 @@ from .. import contract
 from ..deps import get_current_user, get_db
 from ..engines import ledger
 from ..engines.status import compute_status, overlap_hours
-from ..models import Collab, Need, Skill, User
+from ..models import Need, Project, Skill, User
 from ..timeutil import get_now
 
 router = APIRouter()
 
 
 class SignupIn(BaseModel):
-    """v2 계약 키. 내부 모델은 tz/lang을 쓰므로 이 경계에서 한 번만 변환한다."""
     name: str
     email: str
     country: str = ""
@@ -30,10 +29,7 @@ class SignupIn(BaseModel):
 def signup(body: SignupIn, db: Session = Depends(get_db)):
     if db.scalar(select(User).where(User.email == body.email)):
         raise HTTPException(400, "email already registered")
-    data = body.model_dump()
-    data["tz"] = data.pop("timezone")
-    data["lang"] = data.pop("preferred_language")
-    u = User(**data)
+    u = User(**body.model_dump())
     u.created_at = get_now()
     db.add(u)
     db.flush()
@@ -56,10 +52,11 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     u = db.scalar(select(User).where(User.email == body.email))
     if not u:
         raise HTTPException(404, "no account for this email")
-    return {"user_id": u.id, "name": u.name, "preferred_language": u.lang}
+    return {"user_id": u.id, "name": u.name, "preferred_language": u.preferred_language}
 
 
 class SkillIn(BaseModel):
+    """계약 키는 role, DB 컬럼은 skill(docs/schema_v2.sql) — 이 경계에서 한 번만 변환한다."""
     role: str
     level: str = "junior"
     portfolio_url: str = ""
@@ -72,14 +69,16 @@ class NeedIn(BaseModel):
 
 @router.post("/me/skills")
 def add_skill(body: SkillIn, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    db.add(Skill(user_id=me.id, **body.model_dump()))
+    data = body.model_dump()
+    db.add(Skill(user_id=me.id, skill=data.pop("role"), **data))
     db.commit()
     return {"ok": True}
 
 
 @router.post("/me/needs")
 def add_need(body: NeedIn, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    db.add(Need(user_id=me.id, **body.model_dump()))
+    data = body.model_dump()
+    db.add(Need(user_id=me.id, skill=data.pop("role"), **data))
     db.commit()
     return {"ok": True}
 
@@ -87,10 +86,11 @@ def add_need(body: NeedIn, me: User = Depends(get_current_user), db: Session = D
 def _profile(db: Session, u: User) -> dict:
     skills = db.scalars(select(Skill).where(Skill.user_id == u.id)).all()
     needs = db.scalars(select(Need).where(Need.user_id == u.id)).all()
-    return {"user_id": u.id, "name": u.name, "country": u.country, "timezone": u.tz,
-            "preferred_language": u.lang, "work": [u.work_start, u.work_end],
-            "skills": [{"role": s.role, "level": s.level, "portfolio_url": s.portfolio_url} for s in skills],
-            "needs": [{"role": n.role, "note": n.note} for n in needs]}
+    return {"user_id": u.id, "name": u.name, "country": u.country, "timezone": u.timezone,
+            "preferred_language": u.preferred_language, "work": [u.work_start, u.work_end],
+            "skills": [{"role": s.skill, "level": s.level, "portfolio_url": s.portfolio_url}
+                       for s in skills],
+            "needs": [{"role": n.skill, "note": n.note} for n in needs]}
 
 
 @router.get("/me")
@@ -113,10 +113,11 @@ def matching(role: Optional[str] = None, me: User = Depends(get_current_user),
 
     role 파라미터로 특정 역할만 필터 가능. 겹침 시간은 오늘 근무창 기준.
     """
-    want = [role] if role else [n.role for n in db.scalars(select(Need).where(Need.user_id == me.id))]
+    want = ([role] if role else
+            [n.skill for n in db.scalars(select(Need).where(Need.user_id == me.id))])
     if not want:
         return {"results": [], "note": "필요 역량(needs)을 먼저 등록하세요"}
-    rows = db.scalars(select(Skill).where(Skill.role.in_(want), Skill.user_id != me.id)).all()
+    rows = db.scalars(select(Skill).where(Skill.skill.in_(want), Skill.user_id != me.id)).all()
     now = get_now(me)
     results, seen = [], set()
     for s in rows:
@@ -125,17 +126,17 @@ def matching(role: Optional[str] = None, me: User = Depends(get_current_user),
         seen.add(s.user_id)
         u = db.get(User, s.user_id)
         results.append({"user": _profile(db, u),
-                        "matched_role": s.role,
+                        "matched_role": s.skill,
                         "overlap_hours": overlap_hours(me, u, now)})
     results.sort(key=lambda r: -r["overlap_hours"])
     return {"results": results}
 
 
-def _has_collab_between(db: Session, a: str, b: str) -> bool:
-    q = select(Collab).where(
-        or_(Collab.requester_id == a, Collab.provider_id == a),
-        or_(Collab.requester_id == b, Collab.provider_id == b),
-        Collab.status.in_(["requested", "agreed", "completed"]))
+def _has_project_between(db: Session, a: str, b: str) -> bool:
+    q = select(Project).where(
+        or_(Project.requester_id == a, Project.worker_id == a),
+        or_(Project.requester_id == b, Project.worker_id == b),
+        Project.status.in_(["MATCHED", "IN_PROGRESS", "COMPLETED"]))
     return db.scalar(q) is not None
 
 
@@ -145,19 +146,19 @@ def user_status(user_id: str, me: User = Depends(get_current_user), db: Session 
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(404, "no such user")
-    if target.id != me.id and not _has_collab_between(db, me.id, target.id):
+    if target.id != me.id and not _has_project_between(db, me.id, target.id):
         raise HTTPException(403, "status visible to collaboration partners only")
     now = get_now(me)
-    st = compute_status(target.tz, target.work_start, target.work_end,
+    st = compute_status(target.timezone, target.work_start, target.work_end,
                         target.sleep_start, target.sleep_end, now)
     from ..timeutil import aware
     la = aware(target.last_active_at)
     hours_ago = round((now - la).total_seconds() / 3600, 1) if la else None
     status = contract.user_status(st.state)
-    return {"user_id": target.id, "name": target.name, "timezone": target.tz,
+    return {"user_id": target.id, "name": target.name, "timezone": target.timezone,
             "local_time": contract.local_time_12h(st.local_time),
             "status": status,
-            "status_label": contract.status_label(status, me.lang),
+            "status_label": contract.status_label(status, me.preferred_language),
             "next_response_utc": st.next_response_utc,
             "last_active_at": la.isoformat() if la else None,
             "last_active_hours_ago": hours_ago}

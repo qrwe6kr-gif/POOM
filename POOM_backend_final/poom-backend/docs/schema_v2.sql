@@ -12,6 +12,10 @@ CREATE TABLE users (
     email VARCHAR(255) UNIQUE NOT NULL,
     timezone VARCHAR(50) NOT NULL DEFAULT 'Asia/Seoul',
     preferred_language VARCHAR(10) NOT NULL DEFAULT 'ko',
+    -- [추가] 프로필 표기용 국가(매칭 카드·협업방 참여자에 노출)와 프로 계정 플래그.
+    -- 구현에는 있었으나 초안 스키마에 누락돼 있었다.
+    country VARCHAR(40) NOT NULL DEFAULT '',
+    is_pro  BOOLEAN NOT NULL DEFAULT FALSE,
 
     -- [추가] Timezone Status 엔진의 데이터 원천.
     -- timezone만으로는 '근무 중/수면 중/근무 시작 예정' 판정이 불가능하다.
@@ -59,6 +63,8 @@ CREATE TABLE projects (
     requester_id INT NOT NULL REFERENCES users(id),
     worker_id    INT NOT NULL REFERENCES users(id),
     title VARCHAR(200) NOT NULL,
+    -- [추가] 작업 목표(협업방 헤더에 제목과 함께 표시). 초안 누락.
+    scope TEXT NOT NULL DEFAULT '',
     -- [수정] DEFAULT 100 제거 — 견적은 '건당 확정 합의값'이므로 기본값이 있으면 안 된다.
     agreed_credits INT NOT NULL CHECK (agreed_credits > 0),
     deadline TIMESTAMPTZ,                       -- 협업방 헤더에 표시되는 마감일
@@ -69,7 +75,11 @@ CREATE TABLE projects (
     requester_completed BOOLEAN NOT NULL DEFAULT FALSE,
     worker_completed    BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    -- [추가] 상태 전이 시각. updated_at은 '마지막 변경'만 알려주므로
+    -- 에스크로 잠금(수락)·정산(완료) 시점을 따로 남긴다.
+    agreed_at    TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
 );
 CREATE INDEX idx_projects_requester ON projects(requester_id);
 CREATE INDEX idx_projects_worker    ON projects(worker_id);

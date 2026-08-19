@@ -157,7 +157,10 @@ def test_ledger_hold_release_refund():
     db.close()
 
 
-# ---------------- demo rehearsal: 5-step end-to-end ----------------
+# ---------------- demo rehearsal: 5-step end-to-end (API 계약 v2) ----------------
+
+V1 = "/api/v1"
+
 
 def H(uid):
     return {"X-User-Id": uid}
@@ -166,30 +169,32 @@ def H(uid):
 def test_demo_flow_end_to_end():
     base = "2026-08-20T00:00:00+00:00"           # KST 09:00 / LA(PDT) 전날 17:00
 
-    kr = client.post("/auth/signup", json={
+    kr = client.post(f"{V1}/auth/signup", json={
         "name": "지호", "email": "kr@poom.dev", "country": "KR",
-        "tz": "Asia/Seoul", "lang": "ko"}).json()["user_id"]
-    us = client.post("/auth/signup", json={
+        "timezone": "Asia/Seoul", "preferred_language": "ko"}).json()["user_id"]
+    us = client.post(f"{V1}/auth/signup", json={
         "name": "Alex", "email": "us@poom.dev", "country": "US",
-        "tz": "America/Los_Angeles", "lang": "en"}).json()["user_id"]
+        "timezone": "America/Los_Angeles", "preferred_language": "en"}).json()["user_id"]
 
-    assert client.post("/me/needs", json={"role": "design"}, headers=H(kr)).status_code == 200
-    assert client.post("/me/skills", json={"role": "design", "level": "mid"},
+    assert client.post(f"{V1}/me/needs", json={"role": "design"},
+                       headers=H(kr)).status_code == 200
+    assert client.post(f"{V1}/me/skills", json={"role": "design", "level": "mid"},
                        headers=H(us)).status_code == 200
 
     # 가상 세계 시각 T0 고정 (두 계정 동일)
-    client.post("/demo/time", json={"user_ids": [kr, us], "now": base})
+    client.post(f"{V1}/demo/time", json={"user_ids": [kr, us], "now": base})
 
     # [1] 매칭 — 겹침 시간과 함께 Alex 발견
-    m = client.get("/matching", headers=H(kr)).json()["results"]
-    assert m and m[0]["user"]["id"] == us and m[0]["overlap_hours"] >= 0.5
+    m = client.get(f"{V1}/matching", headers=H(kr)).json()["results"]
+    assert m and m[0]["user"]["user_id"] == us and m[0]["overlap_hours"] >= 0.5
 
     # 견적 60c 합의 → hold
-    cid = client.post("/collabs", json={"provider_id": us, "title": "로고+키비주얼",
-                                        "credit_amount": 60}, headers=H(kr)).json()["collab_id"]
-    r = client.post(f"/collabs/{cid}/accept", headers=H(us)).json()
-    assert r["status"] == "agreed" and r["escrow_held"] == 60
-    assert client.get("/me/credits", headers=H(kr)).json()["balance"] == 40
+    pid = client.post(f"{V1}/projects",
+                      json={"worker_id": us, "title": "로고+키비주얼",
+                            "agreed_credits": 60}, headers=H(kr)).json()["project_id"]
+    r = client.post(f"{V1}/projects/{pid}/accept", headers=H(us)).json()
+    assert r["status"] == "IN_PROGRESS" and r["escrow_held"] == 60
+    assert client.get(f"{V1}/me/credits", headers=H(kr)).json()["balance"] == 40
 
     # 대화 5건 (마지막 4건은 KR 발신 — 결정/미결정/액션/질문 포함)
     for uid, body in [(us, "Hi! Excited to start."),
@@ -197,64 +202,82 @@ def test_demo_flow_end_to_end():
                       (kr, "폰트는 아직 고민 중이에요"),
                       (kr, "수요일까지 첫 시안 부탁드립니다"),
                       (kr, "최종본은 SVG로 가능할까요?")]:
-        client.post(f"/collabs/{cid}/messages", json={"body": body}, headers=H(uid))
-    client.get(f"/collabs/{cid}/messages", headers=H(us))   # US가 읽음
+        client.post(f"{V1}/projects/{pid}/messages", json={"body": body}, headers=H(uid))
+    client.get(f"{V1}/projects/{pid}/messages", headers=H(us))   # US가 읽음
 
     # [2] +11h — LA 04:00 수면 중
     t1 = "2026-08-20T11:00:00+00:00"
-    client.post("/demo/time", json={"user_ids": [kr, us], "now": t1})
-    st = client.get(f"/users/{us}/status", headers=H(kr)).json()
-    assert st["state"] == "sleeping" and st["next_response_utc"]
+    client.post(f"{V1}/demo/time", json={"user_ids": [kr, us], "now": t1})
+    st = client.get(f"{V1}/users/{us}/status", headers=H(kr)).json()
+    assert st["status"] == "SLEEPING" and st["next_response_utc"]
+    assert st["status_label"] == "비근무"              # 조회자(KR)의 언어로 생성
+    assert st["timezone"] == "America/Los_Angeles"
+    assert st["local_time"] == "04:00 AM"
 
     # [3] 수면 중 추가 메시지
-    client.post(f"/collabs/{cid}/messages",
+    client.post(f"{V1}/projects/{pid}/messages",
                 json={"body": "추가: 배경은 흰색으로 확정했어요"}, headers=H(kr))
 
     # 프라이버시: 제3자는 상태 조회 불가
-    stranger = client.post("/auth/signup", json={
-        "name": "S", "email": "s@poom.dev", "tz": "Asia/Seoul"}).json()["user_id"]
-    assert client.get(f"/users/{us}/status", headers=H(stranger)).status_code == 403
+    stranger = client.post(f"{V1}/auth/signup", json={
+        "name": "S", "email": "s@poom.dev", "timezone": "Asia/Seoul"}).json()["user_id"]
+    assert client.get(f"{V1}/users/{us}/status", headers=H(stranger)).status_code == 403
 
     # [4] +17h — LA 10:00 기상, 접속 순간 다이제스트 자동 생성 (지연 평가)
     t2 = "2026-08-20T17:00:00+00:00"
-    client.post("/demo/time", json={"user_ids": [kr, us], "now": t2})
-    d = client.get(f"/collabs/{cid}/digest", headers=H(us)).json()
-    assert d["generated"] is True and d["lang"] == "en" and d["trigger"] == "auto"
+    client.post(f"{V1}/demo/time", json={"user_ids": [kr, us], "now": t2})
+    d = client.get(f"{V1}/projects/{pid}/relay-digest", headers=H(us)).json()
+    assert d["generated"] is True and d["language"] == "en" and d["trigger"] == "auto"
+    assert d["project_id"] == pid and d["unread_message_count"] == 6
     pl = d["digest"]
     assert len(pl["decisions"]) >= 2          # 네이비 확정 + 흰색 확정
-    assert pl["open_items"] and pl["key_questions"] and pl["action_items"]
-    for key in ("relay_summary", "decisions", "open_items", "key_questions", "action_items"):
+    assert pl["summary"] and pl["pending"] and pl["key_questions"] and pl["action_items"]
+    assert pl["tone_cushioned_message"]
+    for key in ("summary", "decisions", "pending", "key_questions", "action_items"):
         for item in pl[key]:
             assert item["source_ids"]
     # 중복 생성 방지
-    d2 = client.get(f"/collabs/{cid}/digest", headers=H(us)).json()
-    assert d2["generated"] is False and d2["id"] == d["id"]
+    d2 = client.get(f"{V1}/projects/{pid}/relay-digest", headers=H(us)).json()
+    assert d2["generated"] is False and d2["digest_id"] == d["digest_id"]
 
     # [5] 완료 → 지급 → 상호 평가 동시 공개
-    client.post(f"/collabs/{cid}/messages", json={"body": "Got it! Draft by Wed."},
+    client.post(f"{V1}/projects/{pid}/messages", json={"body": "Got it! Draft by Wed."},
                 headers=H(us))
-    # Step 8: 답변 전송 시 다이제스트 '확인 완료'(is_read) 전환
-    assert client.get(f"/collabs/{cid}/digest", headers=H(us)).json()["is_read"] is True
-    client.post(f"/collabs/{cid}/complete", headers=H(us))
-    r = client.post(f"/collabs/{cid}/complete", headers=H(kr)).json()
-    assert r["settled"] is True
-    assert client.get("/me/credits", headers=H(kr)).json()["balance"] == 40
-    assert client.get("/me/credits", headers=H(us)).json()["balance"] == 160
+    # 답변 전송 시 다이제스트 '확인 완료'(is_read) 전환
+    assert client.get(f"{V1}/projects/{pid}/relay-digest",
+                      headers=H(us)).json()["is_read"] is True
+    r1 = client.post(f"{V1}/projects/{pid}/complete", headers=H(us)).json()
+    assert r1["settled"] is False and r1["released_credits"] == 0
+    assert r1["status"] == "IN_PROGRESS" and r1["confirmed"]["worker"] is True
+    r = client.post(f"{V1}/projects/{pid}/complete", headers=H(kr)).json()
+    assert r["settled"] is True and r["status"] == "COMPLETED"
+    assert r["project_id"] == pid and r["released_credits"] == 60 and r["my_balance"] == 40
+    credits_us = client.get(f"{V1}/me/credits", headers=H(us)).json()
+    assert credits_us["balance"] == 160
+    assert {t["type"] for t in credits_us["transactions"]} == {"SIGNUP_BONUS", "RELEASE"}
 
-    client.post(f"/collabs/{cid}/reviews", headers=H(us),
+    # 협업방 헤더 · 목록 (v2 키)
+    det = client.get(f"{V1}/projects/{pid}", headers=H(kr)).json()
+    assert det["project_id"] == pid and det["status"] == "COMPLETED"
+    assert det["agreed_credits"] == 60 and det["my_role"] == "requester"
+    lst = client.get(f"{V1}/projects", headers=H(us)).json()["projects"]
+    assert lst[0]["project_id"] == pid and lst[0]["my_role"] == "worker"
+
+    client.post(f"{V1}/projects/{pid}/reviews", headers=H(us),
                 json={"diligence": 5, "quality": 5, "communication": 5})
-    assert client.get(f"/collabs/{cid}/reviews", headers=H(us)).json()["visible"] is False
-    client.post(f"/collabs/{cid}/reviews", headers=H(kr),
+    assert client.get(f"{V1}/projects/{pid}/reviews", headers=H(us)).json()["visible"] is False
+    client.post(f"{V1}/projects/{pid}/reviews", headers=H(kr),
                 json={"diligence": 5, "quality": 4, "communication": 5})
-    assert client.get(f"/collabs/{cid}/reviews", headers=H(kr)).json()["visible"] is True
+    assert client.get(f"{V1}/projects/{pid}/reviews", headers=H(kr)).json()["visible"] is True
 
 
 def test_demo_seed_endpoint():
-    r = client.post("/demo/seed").json()
-    assert r["collab_id"] and len(r["demo_steps"]) == 5
-    d = client.post(f"/collabs/{r['collab_id']}/digest",
+    r = client.post(f"{V1}/demo/seed").json()
+    assert r["project_id"] and len(r["demo_steps"]) == 5
+    d = client.post(f"{V1}/projects/{r['project_id']}/relay-digest",
                     headers=H(r["us_user_id"])).json()
     assert d["generated"] is True and d["digest"]["decisions"]
+    assert d["digest"]["tone_cushioned_message"]
 
 
 def test_team_prompt_shape_is_accepted():

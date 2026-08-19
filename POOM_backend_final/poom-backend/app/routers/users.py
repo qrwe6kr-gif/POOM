@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from .. import contract
 from ..deps import get_current_user, get_db
 from ..engines import ledger
 from ..engines.status import compute_status, overlap_hours
@@ -15,11 +16,12 @@ router = APIRouter()
 
 
 class SignupIn(BaseModel):
+    """v2 계약 키. 내부 모델은 tz/lang을 쓰므로 이 경계에서 한 번만 변환한다."""
     name: str
     email: str
     country: str = ""
-    tz: str = "Asia/Seoul"
-    lang: str = "ko"
+    timezone: str = "Asia/Seoul"
+    preferred_language: str = "ko"
     work_start: int = 9
     work_end: int = 18
 
@@ -28,7 +30,10 @@ class SignupIn(BaseModel):
 def signup(body: SignupIn, db: Session = Depends(get_db)):
     if db.scalar(select(User).where(User.email == body.email)):
         raise HTTPException(400, "email already registered")
-    u = User(**body.model_dump())
+    data = body.model_dump()
+    data["tz"] = data.pop("timezone")
+    data["lang"] = data.pop("preferred_language")
+    u = User(**data)
     u.created_at = get_now()
     db.add(u)
     db.flush()
@@ -65,8 +70,8 @@ def add_need(body: NeedIn, me: User = Depends(get_current_user), db: Session = D
 def _profile(db: Session, u: User) -> dict:
     skills = db.scalars(select(Skill).where(Skill.user_id == u.id)).all()
     needs = db.scalars(select(Need).where(Need.user_id == u.id)).all()
-    return {"id": u.id, "name": u.name, "country": u.country, "tz": u.tz, "lang": u.lang,
-            "work": [u.work_start, u.work_end],
+    return {"user_id": u.id, "name": u.name, "country": u.country, "timezone": u.tz,
+            "preferred_language": u.lang, "work": [u.work_start, u.work_end],
             "skills": [{"role": s.role, "level": s.level, "portfolio_url": s.portfolio_url} for s in skills],
             "needs": [{"role": n.role, "note": n.note} for n in needs]}
 
@@ -131,7 +136,11 @@ def user_status(user_id: str, me: User = Depends(get_current_user), db: Session 
     from ..timeutil import aware
     la = aware(target.last_active_at)
     hours_ago = round((now - la).total_seconds() / 3600, 1) if la else None
-    return {"user_id": target.id, "name": target.name, "local_time": st.local_time,
-            "state": st.state, "next_response_utc": st.next_response_utc,
+    status = contract.user_status(st.state)
+    return {"user_id": target.id, "name": target.name, "timezone": target.tz,
+            "local_time": contract.local_time_12h(st.local_time),
+            "status": status,
+            "status_label": contract.status_label(status, me.lang),
+            "next_response_utc": st.next_response_utc,
             "last_active_at": la.isoformat() if la else None,
             "last_active_hours_ago": hours_ago}

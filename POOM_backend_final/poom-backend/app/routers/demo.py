@@ -76,11 +76,14 @@ def seed(db: Session = Depends(get_db)):
     for u in (kr, us):
         u.demo_now = base + timedelta(minutes=30)
     db.commit()
-    return {"kr_user_id": kr.id, "us_user_id": us.id, "collab_id": c.id,
+    return {"kr_user_id": kr.id, "us_user_id": us.id, "project_id": c.id,
             "virtual_now": (base + timedelta(minutes=30)).isoformat(),
             "demo_steps": [
-                "1) KR 화면: GET /matching → Alex 매칭·겹침 시간 확인, 협업은 이미 agreed(60c 잠김)",
-                "2) POST /demo/time 으로 두 계정을 +11h 전진 → KR이 GET /users/{us}/status → sleeping",
+                "1) KR 화면: GET /api/v1/matching → Alex 매칭·겹침 시간 확인, "
+                "협업은 이미 IN_PROGRESS(60c 잠김)",
+                "2) POST /api/v1/demo/time 으로 두 계정을 +11h 전진 → "
+                "KR이 GET /api/v1/users/{us}/status → SLEEPING",
                 "3) KR이 메시지 추가 전송 (US는 수면 중)",
-                "4) POST /demo/time 으로 +17h 지점 이동(US 오전) → US가 GET /collabs/{id}/digest → 자동 생성",
-                "5) 양측 POST /collabs/{id}/complete → 60c 지급, 리뷰 → 동시 공개"]}
+                "4) POST /api/v1/demo/time 으로 +17h 지점 이동(US 오전) → "
+                "US가 GET /api/v1/projects/{id}/relay-digest → 자동 생성",
+                "5) 양측 POST /api/v1/projects/{id}/complete → 60c 지급, 리뷰 → 동시 공개"]}

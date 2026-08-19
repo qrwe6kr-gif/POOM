@@ -1,15 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import FRONTEND_ORIGIN
+from .config import DEV_ORIGINS, FRONTEND_ORIGIN
 from .db import init_db
 from .routers import collabs, demo, users
 
 API_PREFIX = "/api/v1"   # 팀 확정 계약 v2 — docs/api_spec_v2.md
 
-DEV_ORIGIN = "http://localhost:3000"          # Next.js 개발 서버
-ALLOWED_ORIGINS = [DEV_ORIGIN]
-if FRONTEND_ORIGIN and FRONTEND_ORIGIN != DEV_ORIGIN:
+ALLOWED_ORIGINS = list(DEV_ORIGINS)           # 로컬 개발 서버(3000·5173)
+if FRONTEND_ORIGIN and FRONTEND_ORIGIN not in ALLOWED_ORIGINS:
     ALLOWED_ORIGINS.append(FRONTEND_ORIGIN)   # 배포된 프론트 도메인
 
 app = FastAPI(title="POOM Backend", version="0.2.0",

@@ -79,7 +79,7 @@ Railway는 Dockerfile 없이도(Nixpacks) 뜨지만, 저장소의 `Dockerfile`�
 
    | 키 | 값 | 비고 |
    |---|---|---|
-   | `FRONTEND_ORIGIN` | 프론트 배포 도메인 (예: `https://poom.vercel.app`) | CORS 허용 목록에 추가된다. `http://localhost:3000`은 코드에 이미 있다 |
+   | `FRONTEND_ORIGIN` | 프론트 배포 도메인 (예: `https://poom.vercel.app`) | CORS 허용 목록에 추가된다. 로컬 개발 오리진 `http://localhost:3000`·`:5173`은 코드에 이미 있다 |
    | `LLM_PROVIDER` | `mock` | 실제 LLM 연결 전까지는 mock. 시연은 mock으로도 전부 동작한다 |
    | `DEMO_KEY` | 임의의 긴 문자열 | `/api/v1/demo/*` 보호. 설정하면 `X-Demo-Key` 헤더 일치를 요구한다. **배포에는 반드시 설정** |
 

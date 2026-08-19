@@ -28,6 +28,9 @@ WORK_END_DEFAULT = 18
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")  # mock | openai
 # 프론트 배포 도메인. 로컬 개발 오리진(localhost:3000)은 코드에 상수로 두고,
 # 배포 후 추가되는 도메인만 이 환경변수로 넣는다.
+# 로컬 개발 서버 오리진(기본 허용). 5173은 Vite, 3000은 Next.js/CRA 기본 포트다 —
+# 프론트가 어느 쪽으로 뜨든 로컬 연동이 막히지 않게 둘 다 허용한다.
+DEV_ORIGINS = ["http://localhost:3000", "http://localhost:5173"]
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")
 
 

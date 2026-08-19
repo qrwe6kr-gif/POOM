@@ -301,16 +301,20 @@ def test_team_prompt_shape_is_accepted():
 # ---------------- CORS ----------------
 
 def test_cors_preflight_allows_frontend_origin():
-    """Next.js 개발 서버의 preflight 통과 + 커스텀 헤더 X-User-Id 허용."""
-    r = client.options(f"{V1}/me", headers={
-        "Origin": "http://localhost:3000",
-        "Access-Control-Request-Method": "GET",
-        "Access-Control-Request-Headers": "X-User-Id"})
-    assert r.status_code == 200
-    assert r.headers["access-control-allow-origin"] == "http://localhost:3000"
-    assert "x-user-id" in r.headers["access-control-allow-headers"].lower()
-    # 헤더 인증 방식이므로 credentials는 켜지 않는다
-    assert "access-control-allow-credentials" not in r.headers
+    """로컬 개발 서버 preflight 통과 + 커스텀 헤더 X-User-Id 허용.
+
+    5173(Vite)과 3000(Next.js/CRA) 둘 다 허용해야 한다 — 현재 프론트는 Vite다.
+    """
+    for origin in ("http://localhost:3000", "http://localhost:5173"):
+        r = client.options(f"{V1}/me", headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-User-Id"})
+        assert r.status_code == 200, origin
+        assert r.headers["access-control-allow-origin"] == origin
+        assert "x-user-id" in r.headers["access-control-allow-headers"].lower()
+        # 헤더 인증 방식이므로 credentials는 켜지 않는다
+        assert "access-control-allow-credentials" not in r.headers
 
 
 # ---------------- 이메일 간이 로그인 ----------------

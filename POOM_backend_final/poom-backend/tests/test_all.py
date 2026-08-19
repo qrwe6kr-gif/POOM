@@ -331,3 +331,15 @@ def test_email_login_returns_same_user():
     # 미등록 이메일
     bad = client.post(f"{V1}/auth/login", json={"email": "nobody@poom.dev"})
     assert bad.status_code == 404 and bad.json()["detail"]
+
+
+# ---------------- 배포: DATABASE_URL 정규화 ----------------
+
+def test_database_url_normalized_for_psycopg():
+    """Railway류의 postgres:// 를 SQLAlchemy 2 + psycopg(v3) 형태로 바꾼다."""
+    from app.config import _normalize_db_url
+    target = "postgresql+psycopg://u:p@host:5432/db"
+    assert _normalize_db_url("postgres://u:p@host:5432/db") == target
+    assert _normalize_db_url("postgresql://u:p@host:5432/db") == target
+    assert _normalize_db_url(target) == target          # 이미 정규형이면 그대로
+    assert _normalize_db_url("sqlite:///./poom.db") == "sqlite:///./poom.db"

@@ -1,7 +1,21 @@
 """확정 파라미터 — 팀 합의값은 전부 여기에서만 바꾼다."""
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./poom.db")
+def _normalize_db_url(url: str) -> str:
+    """배포 플랫폼이 주는 PostgreSQL URL을 이 프로젝트의 드라이버에 맞춰 정규화한다.
+
+    - Railway/Heroku류는 postgres:// 접두사를 주는데 SQLAlchemy 2는 이를 거부한다.
+    - postgresql:// 는 받아주지만 기본 드라이버로 psycopg2를 찾는다.
+      설치하는 드라이버는 psycopg(v3)이므로 두 경우 모두 postgresql+psycopg:// 로 맞춘다.
+    - sqlite 등 그 밖의 URL은 그대로 둔다(로컬 동작 불변).
+    """
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+DATABASE_URL = _normalize_db_url(os.getenv("DATABASE_URL", "sqlite:///./poom.db"))
 
 SIGNUP_BONUS = 100          # 신규 가입 초기 지갑 (c)
 CREDIT_PER_HOUR = 10        # 참고 단가: 10c ≈ 표준 1시간 상당

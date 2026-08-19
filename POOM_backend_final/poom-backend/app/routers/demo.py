@@ -6,16 +6,28 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..config import demo_key
 from ..deps import get_db
 from ..engines import ledger
 from ..models import Message, Need, Project, Skill, User
 from ..timeutil import get_now
 
-router = APIRouter()
+def require_demo_key(x_demo_key: Optional[str] = Header(None)):
+    """DEMO_KEY가 설정된 환경에서만 X-Demo-Key 헤더 일치를 요구한다.
+
+    배포되면 /demo/* 는 공개 URL의 무인증 백도어가 된다 — 그 최소 보호다.
+    설정하지 않으면(로컬 개발·테스트) 기존대로 무인증이라 시연 준비 절차가 그대로 유지된다.
+    """
+    key = demo_key()
+    if key and x_demo_key != key:
+        raise HTTPException(403, "invalid or missing X-Demo-Key")
+
+
+router = APIRouter(dependencies=[Depends(require_demo_key)])
 
 
 class TimeIn(BaseModel):

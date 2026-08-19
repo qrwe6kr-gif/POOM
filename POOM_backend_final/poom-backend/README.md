@@ -55,6 +55,7 @@ grounding 게이트(`finalize`)와 장애 시 Mock 폴백은 이미 동작한다
 
 ```bash
 curl -X POST /api/v1/demo/seed               # 한↔미 시나리오 생성, 5단계 가이드 반환
+# 배포 서버에서는 위 두 호출에 -H "X-Demo-Key: <DEMO_KEY>" 를 붙인다 (로컬은 불필요)
 curl -X POST /api/v1/demo/time -d '{"user_ids": ["<kr>", "<us>"], "now": "2026-08-20T11:00:00Z"}'
 # now: null 을 보내면 실시간으로 복귀
 ```
@@ -80,6 +81,7 @@ Railway는 Dockerfile 없이도(Nixpacks) 뜨지만, 저장소의 `Dockerfile`�
    |---|---|---|
    | `FRONTEND_ORIGIN` | 프론트 배포 도메인 (예: `https://poom.vercel.app`) | CORS 허용 목록에 추가된다. `http://localhost:3000`은 코드에 이미 있다 |
    | `LLM_PROVIDER` | `mock` | 실제 LLM 연결 전까지는 mock. 시연은 mock으로도 전부 동작한다 |
+   | `DEMO_KEY` | 임의의 긴 문자열 | `/api/v1/demo/*` 보호. 설정하면 `X-Demo-Key` 헤더 일치를 요구한다. **배포에는 반드시 설정** |
 
    `DATABASE_URL`은 2단계에서 자동으로 들어온다. `OPENAI_API_KEY`는 실제 모델을 붙일 때만 넣는다.
 4. **배포 확인** — 첫 배포에서 `init_db()`가 PostgreSQL에 테이블을 생성한다
@@ -91,13 +93,14 @@ Railway는 Dockerfile 없이도(Nixpacks) 뜨지만, 저장소의 `Dockerfile`�
 
 ```bash
 BASE=https://<your-app>.up.railway.app
+DEMO_KEY=<Variables에 넣은 값>
 
 # 1) 살아 있는가
 curl -s $BASE/health
 # → {"ok":true}
 
 # 2) DB 쓰기·읽기가 되는가 (시드 생성 — 유저 2명·프로젝트 1건·메시지 5건 + 60c HOLD)
-curl -s -X POST $BASE/api/v1/demo/seed
+curl -s -X POST $BASE/api/v1/demo/seed -H "X-Demo-Key: $DEMO_KEY"
 # → {"kr_user_id":"...","us_user_id":"...","project_id":"...","virtual_now":"...","demo_steps":[...]}
 
 # 3) AI Relay 다이제스트가 생성되는가 (위 응답의 us_user_id / project_id 사용)
@@ -119,9 +122,10 @@ curl -i -X OPTIONS $BASE/api/v1/me -H "Origin: https://poom.vercel.app" -H "Acce
 
 ## 보안·배포 주의 (공개 저장소일 경우 필독)
 
-- `/api/v1/demo/time`, `/api/v1/demo/seed`는 **인증 없는 시연 전용 백도어**다. 계정의 '현재 시각'을 바꾸고
-  데이터를 생성할 수 있다. 해커톤 기간에는 심사 시연에 필요하므로 배포본에 포함하지만,
-  **해커톤 종료 후에는 라우터 등록을 제거하거나 관리자 인증을 걸 것**
+- `/api/v1/demo/time`, `/api/v1/demo/seed`는 **시연 전용 백도어**다. 계정의 '현재 시각'을 바꾸고
+  데이터를 생성할 수 있다. 해커톤 기간에는 심사 시연에 필요하므로 배포본에 포함하되,
+  **배포 환경에는 `DEMO_KEY`를 반드시 설정**한다(설정 시 `X-Demo-Key` 헤더 일치 요구, 403).
+  이는 최소 보호일 뿐이며 **해커톤 종료 후에는 라우터 등록 자체를 제거할 것**
   (`app/main.py`에서 `demo.router` 한 줄 제거로 차단된다).
 - `X-User-Id` 헤더 인증은 해커톤용 간이 방식이며 위조가 가능하다. 공개 서비스 전에는
   `app/deps.py`의 `get_current_user`를 Supabase Auth(JWT 검증)로 반드시 교체할 것.

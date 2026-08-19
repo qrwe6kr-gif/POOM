@@ -29,3 +29,12 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")  # mock | openai
 # 프론트 배포 도메인. 로컬 개발 오리진(localhost:3000)은 코드에 상수로 두고,
 # 배포 후 추가되는 도메인만 이 환경변수로 넣는다.
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")
+
+
+def demo_key() -> str:
+    """데모 라우터(/demo/*) 보호 키. 비어 있으면 무인증 — 로컬 개발·테스트 기본값이다.
+
+    다른 설정과 달리 상수가 아니라 호출 시점에 읽는다. 테스트가 환경변수를 설정·해제해
+    보호 켠 경로와 끈 경로를 모두 검증할 수 있어야 하기 때문이다.
+    """
+    return os.getenv("DEMO_KEY", "")

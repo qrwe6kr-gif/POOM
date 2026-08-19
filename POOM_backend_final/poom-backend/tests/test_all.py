@@ -343,3 +343,21 @@ def test_database_url_normalized_for_psycopg():
     assert _normalize_db_url("postgresql://u:p@host:5432/db") == target
     assert _normalize_db_url(target) == target          # 이미 정규형이면 그대로
     assert _normalize_db_url("sqlite:///./poom.db") == "sqlite:///./poom.db"
+
+
+# ---------------- 데모 라우터 보호 ----------------
+
+def test_demo_key_protects_demo_router():
+    """DEMO_KEY가 설정된 동안만 X-Demo-Key를 요구하고, 해제하면 다시 무인증이다."""
+    noop = {"user_ids": [], "now": None}     # 부수효과 없는 호출로 게이트만 확인
+    os.environ["DEMO_KEY"] = "s3cret"
+    try:
+        assert client.post(f"{V1}/demo/time", json=noop).status_code == 403
+        assert client.post(f"{V1}/demo/time", json=noop,
+                           headers={"X-Demo-Key": "wrong"}).status_code == 403
+        ok = client.post(f"{V1}/demo/time", json=noop, headers={"X-Demo-Key": "s3cret"})
+        assert ok.status_code == 200 and ok.json()["ok"] is True
+    finally:
+        os.environ.pop("DEMO_KEY", None)
+    # 미설정 상태에서는 헤더 없이도 통과 (로컬 개발·기존 테스트 경로)
+    assert client.post(f"{V1}/demo/time", json=noop).status_code == 200

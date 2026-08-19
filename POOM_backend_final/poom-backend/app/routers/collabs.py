@@ -184,8 +184,10 @@ def _latest_digest(db: Session, collab_id: str, user_id: str) -> Optional[RelayD
 
 
 def _digest_out(d: Optional[RelayDigest]) -> dict:
+    """다이제스트 응답의 단일 형태 — 없을 때도 키 집합은 동일하다(프론트 분기 제거)."""
     if d is None:
-        return {"digest": None}
+        return {"digest": None, "id": None, "lang": None, "trigger": None,
+                "is_read": False, "covers_to_message_id": None, "created_at": None}
     return {"digest": d.payload, "id": d.id, "lang": d.lang, "trigger": d.trigger,
             "is_read": d.is_read,
             "covers_to_message_id": d.covers_to_message_id,

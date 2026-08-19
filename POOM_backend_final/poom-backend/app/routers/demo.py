@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..deps import get_db
 from ..engines import ledger
 from ..models import Collab, Message, Need, Skill, User
-from ..timeutil import aware, get_now
+from ..timeutil import get_now
 
 router = APIRouter()
 
@@ -56,7 +56,7 @@ def seed(db: Session = Depends(get_db)):
                 Need(user_id=us.id, role="dev", note="portfolio site")])
 
     # 가상 시각 기준선: KST 저녁, LA 새벽 직전 구도를 만들기 좋은 시각
-    base = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    base = get_now().replace(minute=0, second=0, microsecond=0)
     c = Collab(requester_id=kr.id, provider_id=us.id, title="랜딩페이지 UI 제작",
                scope="모바일 메인 화면 시안 제작", credit_amount=60,
                created_at=base, deadline=base + timedelta(hours=34))

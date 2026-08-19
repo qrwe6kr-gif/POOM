@@ -8,7 +8,7 @@ POOM + AI Relay(시차 단절 해소) 해커톤 백엔드. FastAPI 단일 서버
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload        # http://127.0.0.1:8000/docs
-pytest -q                            # 7개 테스트 = 엔진 검증 + 5단계 데모 리허설
+pytest -q                            # 8건 = 엔진 검증 + 5단계 데모 리허설
 ```
 
 ## 구조

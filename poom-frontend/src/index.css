@@ -101,8 +101,8 @@ body {
 }
 
 .home-view {
-  width: 100%; min-height: calc(100vh - 72px); max-width: 1180px; margin: 0 auto;
-  padding: 58px 32px 80px;
+  width: 100%; height: calc(100vh - 72px); min-height: 0; max-width: 1180px; margin: 0 auto;
+  padding: 58px 32px 80px; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable;
 }
 .home-heading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; }
 .home-heading p { margin: 0 0 7px; color: var(--lavender); font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
@@ -335,7 +335,7 @@ body {
   .language-toggle > svg { display: none; }
   .avatar { display: none; }
   .workspace { display: block; height: auto; }
-  .home-view { min-height: calc(100vh - 62px); padding: 36px 17px 60px; }
+  .home-view { height: auto; min-height: calc(100vh - 62px); padding: 36px 17px 60px; overflow: visible; }
   .home-heading h1 { font-size: 26px; }
   .project-list { display: grid; grid-template-columns: 1fr; }
   .project-room-card { padding: 20px; }

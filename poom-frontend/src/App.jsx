@@ -20,7 +20,8 @@ import {
   WandSparkles,
 } from 'lucide-react'
 
-const API_BASE = 'http://localhost:8000/api'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
+const API_TIMEOUT = 5000
 
 const COPY = {
   ko: {
@@ -58,6 +59,57 @@ const createRequestMessages = () =>
     time,
     unread: true,
   }))
+
+const FALLBACK_ROOM = {
+  room_id: 'room_landing_01',
+  project_title: '랜딩페이지 UI 제작',
+  workflow: { current_step: 2, progress_percent: 50 },
+  participants: [
+    { user_id: 1, name: 'Alex', role: 'Project Lead', location: 'San Francisco · 전날 18:15', status: 'offline', badge: '업무 종료' },
+    { user_id: 2, name: '아기 사자', role: 'Maker', location: 'Seoul · 10:15', status: 'online', badge: '온라인' },
+  ],
+  timezone_gap_text: '서울이 샌프란시스코보다 16시간 빠릅니다.',
+}
+
+const FALLBACK_ABSENCE_BANNER = {
+  show: true,
+  text: '아기 사자가 자는 동안 Alex가 오후에 메시지 5개를 남겼습니다.',
+}
+
+const mapApiMessage = (message, index = 0) => {
+  const isBabyLion = message.sender_name === '아기 사자' || message.user_id === 2
+  return {
+    id: message.message_id || message.id || Date.now() + index,
+    sender: isBabyLion ? 'babyLion' : 'alex',
+    name: `${message.sender_name || (isBabyLion ? '아기 사자' : 'Alex')} · ${message.sender_role || (isBabyLion ? 'Maker' : 'Project Lead')}`,
+    text: message.content || message.text || '',
+    time: message.time || '지금',
+    unread: Boolean(message.is_unread),
+  }
+}
+
+const mapApiDigest = (data, fallback) => {
+  if (!data?.grid_cards) return fallback
+  return {
+    id: data.digest_id,
+    analyzedCount: data.analyzed_count,
+    title: data.header_title,
+    subtitle: data.header_subtitle,
+    summary: data.grid_cards.progress_summary,
+    decisions: data.grid_cards.decisions_made,
+    pending: data.grid_cards.pending_items,
+    question: data.grid_cards.key_questions,
+    actions: (data.action_items || []).map((item) => ({ id: item.id, text: item.text })),
+    reply: data.suggested_reply?.text || fallback.reply,
+    replyTag: data.suggested_reply?.tag,
+    workflowProgress: data.workflow_progress,
+  }
+}
+
+const messageOrder = (message) => {
+  const matchedNumber = String(message.id ?? '').match(/\d+/)?.[0]
+  return matchedNumber ? Number(matchedNumber) : Number.MAX_SAFE_INTEGER
+}
 
 const PHASES = [
   { id: 'brief', label: '요청 전달' },
@@ -134,17 +186,21 @@ function App() {
   const [phase, setPhase] = useState('waiting')
   const [lang, setLang] = useState('ko')
   const [messages, setMessages] = useState(createRequestMessages)
+  const [room, setRoom] = useState(FALLBACK_ROOM)
+  const [absenceBanner, setAbsenceBanner] = useState(FALLBACK_ABSENCE_BANNER)
   const [digest, setDigest] = useState(null)
   const [input, setInput] = useState('')
   const [checkedActions, setCheckedActions] = useState([])
+  const [isSending, setIsSending] = useState(false)
   const streamRef = useRef(null)
 
   const activeStep = useMemo(() => {
-    if (phase === 'complete') return 3
-    if (['digest', 'draft'].includes(phase)) return 2
-    if (['waiting', 'analyzing'].includes(phase)) return 1
-    return 0
-  }, [phase])
+    const currentStep = Number(room.workflow?.current_step || 2)
+    return Math.max(0, Math.min(PHASES.length - 1, currentStep - 1))
+  }, [room.workflow?.current_step])
+
+  const progressPercent = room.workflow?.progress_percent ?? Math.round(((activeStep + 1) / PHASES.length) * 100)
+  const digestActions = digest?.actions || digest?.action_items || []
 
   const selectedSecondaryProject = SECONDARY_PROJECTS.find((project) => project.id === selectedProjectId)
 
@@ -157,12 +213,54 @@ function App() {
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, phase])
 
-  const resetDemo = () => {
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadLandingRoom = async () => {
+      const [roomResult, messageResult] = await Promise.allSettled([
+        axios.get(`${API_BASE}/room`, { timeout: API_TIMEOUT }),
+        axios.get(`${API_BASE}/messages`, { timeout: API_TIMEOUT }),
+      ])
+
+      if (isCancelled) return
+      if (roomResult.status === 'fulfilled' && roomResult.value.data) {
+        setRoom(roomResult.value.data)
+      }
+      if (messageResult.status === 'fulfilled' && messageResult.value.data) {
+        const messageData = messageResult.value.data
+        setMessages((messageData.messages || []).map(mapApiMessage))
+        setAbsenceBanner(messageData.absence_banner || { show: false, text: '' })
+      }
+    }
+
+    loadLandingRoom()
+    return () => { isCancelled = true }
+  }, [])
+
+  const resetDemo = async () => {
     setPhase('waiting')
     setMessages(createRequestMessages())
+    setRoom(FALLBACK_ROOM)
+    setAbsenceBanner(FALLBACK_ABSENCE_BANNER)
     setDigest(null)
     setInput('')
     setCheckedActions([])
+
+    await axios.post(
+      `${API_BASE}/demo/simulate-gap`,
+      { user_id: 2, hours_ago: 4.0 },
+      { timeout: API_TIMEOUT },
+    ).catch(() => null)
+
+    const [roomResult, messageResult] = await Promise.allSettled([
+      axios.get(`${API_BASE}/room`, { timeout: API_TIMEOUT }),
+      axios.get(`${API_BASE}/messages`, { timeout: API_TIMEOUT }),
+    ])
+    if (roomResult.status === 'fulfilled' && roomResult.value.data) setRoom(roomResult.value.data)
+    if (messageResult.status === 'fulfilled' && messageResult.value.data) {
+      setMessages((messageResult.value.data.messages || []).map(mapApiMessage))
+      setAbsenceBanner(messageResult.value.data.absence_banner || { show: false, text: '' })
+    }
   }
 
   const changeLanguage = (nextLang) => {
@@ -176,21 +274,26 @@ function App() {
     try {
       const request = axios.post(
         `${API_BASE}/relay-digest`,
-        {
-          chat_history: messages.map((message) => message.text).join('\n'),
-          target_lang: lang,
-        },
-        { timeout: 3500 },
+        { user_id: 2 },
+        { timeout: API_TIMEOUT },
       )
       const [response] = await Promise.all([
         request,
         new Promise((resolve) => setTimeout(resolve, 1100)),
       ])
-      const data = response?.data?.digest
-      setDigest(data ? { ...COPY[lang], ...data, question: data.question || data.key_questions } : COPY[lang])
+      const nextDigest = mapApiDigest(response?.data, COPY[lang])
+      setDigest(nextDigest)
+      setRoom((current) => ({
+        ...current,
+        workflow: {
+          current_step: 3,
+          progress_percent: nextDigest.workflowProgress ?? 75,
+        },
+      }))
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 900))
       setDigest(COPY[lang])
+      setRoom((current) => ({ ...current, workflow: { current_step: 3, progress_percent: 75 } }))
     }
 
     setPhase('digest')
@@ -201,20 +304,58 @@ function App() {
     setPhase('draft')
   }
 
-  const sendReply = () => {
-    if (!input.trim()) return
-    setMessages((current) => [
-      ...current.map((message) => ({ ...message, unread: false })),
-      {
-        id: Date.now(),
-        sender: 'babyLion',
-        name: '아기 사자 · Maker',
-        text: input.trim(),
-        time: '10:17 KST',
-      },
-    ])
-    setInput('')
-    setPhase('complete')
+  const sendReply = async () => {
+    const replyContent = input.trim()
+    if (!replyContent || isSending) return
+
+    const isDigestReply = Boolean(digest) && ['digest', 'draft'].includes(phase)
+    setIsSending(true)
+
+    try {
+      if (isDigestReply) {
+        const response = await axios.post(
+          `${API_BASE}/action/accept`,
+          {
+            digest_id: digest.id || 'dig_landing_01',
+            user_id: 2,
+            reply_content: replyContent,
+            action_ids: digestActions.map((action, index) => typeof action === 'string' ? `act_${index + 1}` : action.id),
+          },
+          { timeout: API_TIMEOUT },
+        )
+        const sentMessage = mapApiMessage(response.data.sent_message || { sender_name: '아기 사자', user_id: 2, content: replyContent })
+        setMessages((current) => [...current.map((message) => ({ ...message, unread: false })), sentMessage])
+        setRoom((current) => ({ ...current, workflow: response.data.workflow || { current_step: 4, progress_percent: 100 } }))
+      } else {
+        const response = await axios.post(
+          `${API_BASE}/messages`,
+          { user_id: 2, content: replyContent },
+          { timeout: API_TIMEOUT },
+        )
+        setMessages((current) => [...current, mapApiMessage(response.data)])
+      }
+    } catch {
+      setMessages((current) => [
+        ...current.map((message) => isDigestReply ? { ...message, unread: false } : message),
+        {
+          id: Date.now(),
+          sender: 'babyLion',
+          name: '아기 사자 · Maker',
+          text: replyContent,
+          time: '지금',
+        },
+      ])
+      if (isDigestReply) setRoom((current) => ({ ...current, workflow: { current_step: 4, progress_percent: 100 } }))
+    } finally {
+      setInput('')
+      setIsSending(false)
+    }
+
+    if (isDigestReply) {
+      setCheckedActions(digestActions.map((_, index) => index))
+      setAbsenceBanner({ show: false, text: '' })
+      setPhase('complete')
+    }
   }
 
   const toggleAction = (index) => {
@@ -235,7 +376,7 @@ function App() {
 
           <div className="project-chip">
             <LayoutTemplate size={14} />
-            <span>{screen === 'home' ? '내 협업' : selectedSecondaryProject?.title || '랜딩페이지 UI 제작'}</span>
+            <span>{screen === 'home' ? '내 협업' : selectedSecondaryProject?.title || room.project_title}</span>
             {screen === 'room' && <span className="project-chip-status">진행 중</span>}
           </div>
 
@@ -259,6 +400,7 @@ function App() {
         <HomeView
           messages={messages}
           phase={phase}
+          room={room}
           onOpenRoom={openRoom}
         />
       ) : selectedProjectId === 'landing' ? (
@@ -267,9 +409,9 @@ function App() {
           <div className="progress-card">
             <div className="progress-heading">
               <span>현재 작업 흐름</span>
-              <span>{Math.round(((activeStep + 1) / PHASES.length) * 100)}%</span>
+              <span>{progressPercent}%</span>
             </div>
-            <div className="progress-track"><span style={{ width: `${((activeStep + 1) / PHASES.length) * 100}%` }} /></div>
+            <div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div>
             <ol className="phase-list">
               {PHASES.map((item, index) => (
                 <li key={item.id} className={index < activeStep ? 'done' : index === activeStep ? 'active' : ''}>
@@ -282,17 +424,21 @@ function App() {
 
           <div className="people-card">
             <div className="section-title"><UserRound size={15} /> 참여자</div>
-            <div className="person-row">
-              <div className="mini-avatar violet">A</div>
-              <div><strong>Alex</strong><span>San Francisco · 전날 18:15</span></div>
-              <span className="status-pill sleep"><MoonStar size={11} /> 업무 종료</span>
-            </div>
-            <div className="person-row">
-              <div className="mini-avatar blue">🦁</div>
-              <div><strong>아기 사자</strong><span>Seoul · 10:15</span></div>
-              <span className="status-pill online"><Circle size={8} fill="currentColor" /> 온라인</span>
-            </div>
-            <div className="timezone-note"><Globe2 size={14} /> 서울이 샌프란시스코보다 16시간 빠릅니다.</div>
+            {(room.participants || []).map((participant) => {
+              const isBabyLion = participant.user_id === 2 || participant.name === '아기 사자'
+              const statusTone = participant.status === 'online' ? 'online' : participant.status === 'working' ? 'working' : 'sleep'
+              return (
+                <div className="person-row" key={participant.user_id || participant.name}>
+                  <div className={`mini-avatar ${isBabyLion ? 'blue' : 'violet'}`}>{isBabyLion ? '🦁' : participant.name?.[0]}</div>
+                  <div><strong>{participant.name}</strong><span>{participant.location}</span></div>
+                  <span className={`status-pill ${statusTone}`}>
+                    {participant.status === 'online' ? <Circle size={8} fill="currentColor" /> : participant.status === 'working' ? <SunMedium size={11} /> : <MoonStar size={11} />}
+                    {participant.badge}
+                  </span>
+                </div>
+              )
+            })}
+            <div className="timezone-note"><Globe2 size={14} /> {room.timezone_gap_text}</div>
           </div>
 
           <div className="demo-control">
@@ -321,7 +467,7 @@ function App() {
               <button className="room-back" onClick={() => setScreen('home')} aria-label="협업 목록으로 돌아가기">
                 <ArrowLeft size={16} />
               </button>
-              <h2>랜딩페이지 UI 제작</h2>
+              <h2>{room.project_title}</h2>
             </div>
             <div className="channel-meta">
               <MessageCircle size={14} />
@@ -342,7 +488,7 @@ function App() {
             ) : (
               <>
                 <div className="date-divider"><span>오늘</span></div>
-                {[...messages].sort((first, second) => Number(first.id) - Number(second.id)).map((message) => (
+                {[...messages].sort((first, second) => messageOrder(first) - messageOrder(second)).map((message) => (
                   <article key={message.id} className={`message-row ${message.sender === 'babyLion' ? 'mine' : ''}`}>
                     <div className={`message-avatar ${message.sender === 'babyLion' ? 'blue' : 'violet'}`}>
                       {message.sender === 'babyLion' ? '🦁' : 'A'}
@@ -354,8 +500,8 @@ function App() {
                     </div>
                   </article>
                 ))}
-                {phase === 'waiting' && (
-                  <div className="gap-notice"><MoonStar size={15} /><span>아기 사자가 자는 동안 Alex가 오후에 메시지 5개를 남겼습니다.</span></div>
+                {phase === 'waiting' && absenceBanner.show && (
+                  <div className="gap-notice"><MoonStar size={15} /><span>{absenceBanner.text}</span></div>
                 )}
                 {phase === 'complete' && (
                   <div className="resume-notice"><CheckCircle2 size={15} /><span>AI Relay를 통해 협업이 다시 시작되었습니다.</span></div>
@@ -375,11 +521,11 @@ function App() {
                     sendReply()
                   }
                 }}
-                placeholder="아기 사자로 답변을 작성하세요…"
-                disabled={!['digest', 'draft'].includes(phase)}
+                placeholder="아기 사자로 메시지를 입력하세요…"
+                disabled={phase === 'analyzing' || isSending}
                 aria-label="메시지 입력"
               />
-              <button onClick={sendReply} disabled={!input.trim()} aria-label="메시지 전송"><Send size={17} /></button>
+              <button onClick={sendReply} disabled={!input.trim() || phase === 'analyzing' || isSending} aria-label="메시지 전송"><Send size={17} /></button>
             </div>
             <span>Enter로 전송 · Shift + Enter로 줄바꿈</span>
           </div>
@@ -407,8 +553,8 @@ function App() {
           ) : (
             <div className={`digest-content ${phase === 'complete' ? 'compact' : ''}`}>
               <div className="digest-intro">
-                <span><Sparkles size={13} /> 5개 메시지 분석 완료</span>
-                <p>아기 사자가 놓친 대화의 맥락을 간결하게 정리했어요.</p>
+                <span><Sparkles size={13} /> {digest.title || `${digest.analyzedCount || messages.length}개 메시지 분석 완료`}</span>
+                <p>{digest.subtitle || '아기 사자가 놓친 대화의 맥락을 간결하게 정리했어요.'}</p>
               </div>
 
               <div className="digest-grid">
@@ -419,18 +565,18 @@ function App() {
               </div>
 
               <div className="action-block">
-                <div className="block-title"><span>Action items</span><small>{checkedActions.length}/{digest.actions?.length || digest.action_items?.length || 0}</small></div>
-                {(digest.actions || digest.action_items || []).map((action, index) => (
-                  <button className={`action-row ${checkedActions.includes(index) ? 'checked' : ''}`} key={action} onClick={() => toggleAction(index)}>
+                <div className="block-title"><span>Action items</span><small>{checkedActions.length}/{digestActions.length}</small></div>
+                {digestActions.map((action, index) => (
+                  <button className={`action-row ${checkedActions.includes(index) ? 'checked' : ''}`} key={typeof action === 'string' ? action : action.id} onClick={() => toggleAction(index)}>
                     <span className="check-box">{checkedActions.includes(index) && <Check size={12} />}</span>
-                    <span>{action}</span>
+                    <span>{typeof action === 'string' ? action : action.text}</span>
                   </button>
                 ))}
               </div>
 
               {phase !== 'complete' && (
                 <div className="suggestion-block">
-                  <div className="block-title"><span>추천 답변</span><small>톤 완충 적용</small></div>
+                  <div className="block-title"><span>추천 답변</span><small>{digest.replyTag || '톤 완충 적용'}</small></div>
                   <p>“{digest.reply || digest.suggested_reply}”</p>
                   <button onClick={applyReply}><Sparkles size={14} /> 입력창에 적용 <ChevronRight size={14} /></button>
                 </div>
@@ -446,15 +592,16 @@ function App() {
   )
 }
 
-function HomeView({ messages, phase, onOpenRoom }) {
+function HomeView({ messages, phase, room, onOpenRoom }) {
   const unreadCount = messages.filter((message) => message.unread).length
   const latestMessage = messages.at(-1)
+  const landingPartner = room.participants?.find((participant) => participant.user_id === 1) || { name: 'Alex' }
   const projects = [
     {
       id: 'landing',
-      title: '랜딩페이지 UI 제작',
-      description: 'Alex와 아기 사자가 함께 진행 중인 협업방',
-      partner: { name: 'Alex', avatar: 'A' },
+      title: room.project_title,
+      description: `${landingPartner.name}와 아기 사자가 함께 진행 중인 협업방`,
+      partner: { name: landingPartner.name, avatar: landingPartner.name?.[0] || 'A' },
       status: '진행 중',
       lastActive: '3시간 전',
       lastActiveMinutes: 180,

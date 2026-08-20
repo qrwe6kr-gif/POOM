@@ -1,0 +1,16 @@
+# 용량이 너무 커서 깃허브에 올리면 안 되는 폴더
+node_modules/
+dist/
+
+# 백엔드 가상환경 및 캐시
+venv/
+__pycache__/
+*.pyc
+
+# 보안 키 (API 키 노출 방지)
+.env
+.env.local
+
+# OS 임시 파일
+.DS_Store
+Thumbs.db
